@@ -1,17 +1,19 @@
 import type { MaterialPropertyDefinition, MaterialPropertyValue } from '../../../shared/types/materialProperty'
 import { parseShaderMetadata } from '../metadata/parseShaderMetadata'
 
-const builtinUniformNames = new Set([
-  'uTime',
-  'uResolution',
-  'uMouse',
-  'uSceneMode',
-  'uModel',
-  'uView',
-  'uProj',
-  'uCameraPos',
-  'uLightDir',
-])
+const builtinUniformNames = new Set(
+  [
+    'uTime',
+    'uResolution',
+    'uMouse',
+    'uSceneMode',
+    'uModel',
+    'uView',
+    'uProj',
+    'uCameraPos',
+    'uLightDir',
+  ].map((name) => name.toLowerCase()),
+)
 
 interface MaterialPropertyTemplate {
   valueType: MaterialPropertyDefinition['valueType']
@@ -93,7 +95,7 @@ export function reflectActiveUniforms(
       valueType: supportedTemplate.valueType,
       uiKind: resolveUiKind(supportedTemplate, metadata?.uiKind),
       componentCount: supportedTemplate.componentCount,
-      builtin: builtinUniformNames.has(normalizedName),
+      builtin: builtinUniformNames.has(normalizedName.toLowerCase()),
       label: metadata?.label,
       group: metadata?.group,
       min: metadata?.min,

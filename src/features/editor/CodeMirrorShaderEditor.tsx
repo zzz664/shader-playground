@@ -221,6 +221,9 @@ export default function CodeMirrorShaderEditor({
   const currentStageRef = useRef<ShaderEditorStage>(activeStage)
   const currentDiagnosticsRef = useRef<ParsedDiagnosticLine[]>([])
   const suppressChangeRef = useRef(false)
+  const onVertexChangeRef = useRef(onVertexChange)
+  const onFragmentChangeRef = useRef(onFragmentChange)
+  const initialStageRef = useRef(activeStage)
 
   const currentSource = getStageSource(activeStage, vertexSource, fragmentSource)
   const currentDiagnostics = useMemo(
@@ -228,6 +231,8 @@ export default function CodeMirrorShaderEditor({
     [activeStage, fragmentDiagnostics, vertexDiagnostics],
   )
   const currentDiagnosticCount = currentDiagnostics.length
+  const initialSourceRef = useRef(currentSource)
+  const initialDiagnosticsRef = useRef(currentDiagnostics)
 
   useEffect(() => {
     currentStageRef.current = activeStage
@@ -238,6 +243,14 @@ export default function CodeMirrorShaderEditor({
   }, [currentDiagnostics])
 
   useEffect(() => {
+    onVertexChangeRef.current = onVertexChange
+  }, [onVertexChange])
+
+  useEffect(() => {
+    onFragmentChangeRef.current = onFragmentChange
+  }, [onFragmentChange])
+
+  useEffect(() => {
     const container = containerRef.current
     if (!container || editorViewRef.current) {
       return
@@ -245,7 +258,7 @@ export default function CodeMirrorShaderEditor({
 
     const view = new EditorView({
       state: EditorState.create({
-        doc: currentSource,
+        doc: initialSourceRef.current,
         extensions: [
           lineNumbers(),
           history(),
@@ -256,10 +269,12 @@ export default function CodeMirrorShaderEditor({
           languageCompartment.of(cppLanguage),
           syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
           syntaxHighlighting(shaderHighlightStyle),
-          placeholderCompartment.of(placeholder(getStagePlaceholder(activeStage))),
-          completionCompartment.of(createCompletionExtension(activeStage)),
+          placeholderCompartment.of(placeholder(getStagePlaceholder(initialStageRef.current))),
+          completionCompartment.of(createCompletionExtension(initialStageRef.current)),
           lintGutter(),
-          diagnosticsDecorationCompartment.of(createLineDecorationExtension(currentDiagnostics)),
+          diagnosticsDecorationCompartment.of(
+            createLineDecorationExtension(initialDiagnosticsRef.current),
+          ),
           keymap.of([
             ...historyKeymap,
             indentWithTab,
@@ -277,11 +292,11 @@ export default function CodeMirrorShaderEditor({
             lastValueRef.current = nextValue
 
             if (currentStageRef.current === 'vertex') {
-              onVertexChange(nextValue)
+              onVertexChangeRef.current(nextValue)
               return
             }
 
-            onFragmentChange(nextValue)
+            onFragmentChangeRef.current(nextValue)
           }),
           EditorView.domEventHandlers({
             mousedown: (_event, viewInstance) => {
@@ -352,13 +367,15 @@ export default function CodeMirrorShaderEditor({
     })
 
     editorViewRef.current = view
-    view.dispatch(setDiagnostics(view.state, toCodeMirrorDiagnostics(currentDiagnostics, view.state)))
+    view.dispatch(
+      setDiagnostics(view.state, toCodeMirrorDiagnostics(initialDiagnosticsRef.current, view.state)),
+    )
 
     return () => {
       view.destroy()
       editorViewRef.current = null
     }
-  }, [activeStage, currentDiagnostics, currentSource, onFragmentChange, onVertexChange])
+  }, [])
 
   useEffect(() => {
     const view = editorViewRef.current
@@ -370,11 +387,34 @@ export default function CodeMirrorShaderEditor({
       effects: [
         placeholderCompartment.reconfigure(placeholder(getStagePlaceholder(activeStage))),
         completionCompartment.reconfigure(createCompletionExtension(activeStage)),
+      ],
+    })
+  }, [activeStage])
+
+  useEffect(() => {
+    const view = editorViewRef.current
+    if (!view) {
+      return
+    }
+
+    view.dispatch({
+      effects: [
         diagnosticsDecorationCompartment.reconfigure(createLineDecorationExtension(currentDiagnostics)),
       ],
     })
 
-    if (currentSource !== lastValueRef.current) {
+    view.dispatch(setDiagnostics(view.state, toCodeMirrorDiagnostics(currentDiagnostics, view.state)))
+  }, [currentDiagnostics])
+
+  useEffect(() => {
+    const view = editorViewRef.current
+    if (!view) {
+      return
+    }
+
+    const currentDocument = view.state.doc.toString()
+    if (currentSource !== currentDocument) {
+      const currentSelection = view.state.selection.main
       suppressChangeRef.current = true
       view.dispatch({
         changes: {
@@ -382,13 +422,15 @@ export default function CodeMirrorShaderEditor({
           to: view.state.doc.length,
           insert: currentSource,
         },
+        selection: {
+          anchor: Math.min(currentSelection.anchor, currentSource.length),
+          head: Math.min(currentSelection.head, currentSource.length),
+        },
       })
       lastValueRef.current = currentSource
       suppressChangeRef.current = false
     }
-
-    view.dispatch(setDiagnostics(view.state, toCodeMirrorDiagnostics(currentDiagnostics, view.state)))
-  }, [activeStage, currentDiagnostics, currentSource])
+  }, [currentSource])
 
   useEffect(() => {
     const view = editorViewRef.current

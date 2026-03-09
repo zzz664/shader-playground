@@ -50,6 +50,15 @@ interface RendererUniformLocations {
   cameraPosition: WebGLUniformLocation | null
 }
 
+type BuiltinUniformKey =
+  | 'time'
+  | 'resolution'
+  | 'sceneMode'
+  | 'model'
+  | 'view'
+  | 'projection'
+  | 'cameraPosition'
+
 interface HelperProgramUniformLocations {
   view: WebGLUniformLocation | null
   projection: WebGLUniformLocation | null
@@ -85,6 +94,16 @@ void main() {
   outColor = vColor;
 }
 `
+
+const builtinUniformAliases: Record<BuiltinUniformKey, string[]> = {
+  time: ['uTime'],
+  resolution: ['uResolution'],
+  sceneMode: ['uSceneMode'],
+  model: ['uModel'],
+  view: ['uView'],
+  projection: ['uProj'],
+  cameraPosition: ['uCameraPos'],
+}
 
 export interface RendererStateSnapshot {
   diagnostics: RenderDiagnostics
@@ -251,6 +270,7 @@ export class WebGLQuadRenderer {
 
   updateMaterialValues(nextValues: Record<string, MaterialPropertyValue>) {
     this.materialValues = nextValues
+    this.render(this.elapsedSeconds)
   }
 
   updateSceneMode(sceneMode: SceneMode) {
@@ -327,7 +347,7 @@ export class WebGLQuadRenderer {
       }
 
       this.gl.bindTexture(this.gl.TEXTURE_2D, texture)
-      this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MIN_FILTER, this.gl.LINEAR)
+      this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MIN_FILTER, this.gl.LINEAR_MIPMAP_LINEAR)
       this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MAG_FILTER, this.gl.LINEAR)
       this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_S, this.gl.REPEAT)
       this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_T, this.gl.REPEAT)
@@ -340,9 +360,12 @@ export class WebGLQuadRenderer {
         this.gl.UNSIGNED_BYTE,
         asset.bitmap,
       )
+      this.gl.generateMipmap(this.gl.TEXTURE_2D)
       this.gl.bindTexture(this.gl.TEXTURE_2D, null)
       this.textureAssets.set(asset.id, texture)
     })
+
+    this.render(this.elapsedSeconds)
   }
 
   dispose() {
@@ -432,8 +455,6 @@ export class WebGLQuadRenderer {
       )
     }
 
-    this.applyMaterialUniforms()
-
     if (this.sceneMode !== 'screen') {
       this.gl.enable(this.gl.CULL_FACE)
       this.gl.cullFace(this.gl.BACK)
@@ -446,6 +467,10 @@ export class WebGLQuadRenderer {
       this.gl.enable(this.gl.CULL_FACE)
       this.gl.cullFace(this.gl.BACK)
     }
+
+    // Helper pass가 다른 program과 상태를 사용하므로 메인 draw 직전에 sampler를 다시 맞춘다.
+    this.gl.useProgram(this.program)
+    this.applyMaterialUniforms()
 
     if (this.sceneMode === 'model' && this.uploadedModelMesh) {
       this.gl.useProgram(this.program)
@@ -608,14 +633,35 @@ export class WebGLQuadRenderer {
 
   private getRendererUniformLocations(): RendererUniformLocations {
     return {
-      time: this.gl.getUniformLocation(this.program, 'uTime'),
-      resolution: this.gl.getUniformLocation(this.program, 'uResolution'),
-      sceneMode: this.gl.getUniformLocation(this.program, 'uSceneMode'),
-      model: this.gl.getUniformLocation(this.program, 'uModel'),
-      view: this.gl.getUniformLocation(this.program, 'uView'),
-      projection: this.gl.getUniformLocation(this.program, 'uProj'),
-      cameraPosition: this.gl.getUniformLocation(this.program, 'uCameraPos'),
+      time: this.findBuiltinUniformLocation('time'),
+      resolution: this.findBuiltinUniformLocation('resolution'),
+      sceneMode: this.findBuiltinUniformLocation('sceneMode'),
+      model: this.findBuiltinUniformLocation('model'),
+      view: this.findBuiltinUniformLocation('view'),
+      projection: this.findBuiltinUniformLocation('projection'),
+      cameraPosition: this.findBuiltinUniformLocation('cameraPosition'),
     }
+  }
+
+  private findBuiltinUniformLocation(key: BuiltinUniformKey) {
+    const expectedNames = builtinUniformAliases[key].map((name) => name.toLowerCase())
+    const activeUniformCount = this.gl.getProgramParameter(this.program, this.gl.ACTIVE_UNIFORMS) as number
+
+    for (let index = 0; index < activeUniformCount; index += 1) {
+      const uniform = this.gl.getActiveUniform(this.program, index)
+      if (!uniform) {
+        continue
+      }
+
+      const normalizedName = uniform.name.replace(/\[0\]$/, '')
+      if (!expectedNames.includes(normalizedName.toLowerCase())) {
+        continue
+      }
+
+      return this.gl.getUniformLocation(this.program, normalizedName)
+    }
+
+    return null
   }
 
   private createMesh(meshData: { vertices: Float32Array; indices: Uint16Array | Uint32Array }): UploadedMesh {
