@@ -1,3 +1,5 @@
+export type ParsedDiagnosticSeverity = 'error' | 'warning'
+
 export interface ShaderStageDiagnostic {
   stage: 'vertex' | 'fragment'
   success: boolean
@@ -16,6 +18,7 @@ export interface RenderDiagnostics {
 
 export interface ParsedDiagnosticLine {
   stage: 'vertex' | 'fragment' | 'program'
+  severity: ParsedDiagnosticSeverity
   line: number | null
   column: number | null
   message: string

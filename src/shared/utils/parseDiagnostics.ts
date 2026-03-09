@@ -1,6 +1,10 @@
 import type { ParsedDiagnosticLine, RenderDiagnostics, ShaderStageDiagnostic } from '../types/renderDiagnostics'
 
-const webglLinePattern = /ERROR:\s*\d+:(\d+):\s*(.*)/i
+const webglLinePattern = /^(ERROR|WARNING):\s*\d+:(\d+)(?::(\d+))?:\s*(.*)$/i
+
+function parseSeverity(rawLine: string): ParsedDiagnosticLine['severity'] {
+  return rawLine.toUpperCase().startsWith('WARNING') ? 'warning' : 'error'
+}
 
 function parseShaderDiagnostic(diagnostic: ShaderStageDiagnostic): ParsedDiagnosticLine[] {
   if (!diagnostic.log || diagnostic.success) {
@@ -17,14 +21,16 @@ function parseShaderDiagnostic(diagnostic: ShaderStageDiagnostic): ParsedDiagnos
       if (match) {
         return {
           stage: diagnostic.stage,
-          line: Number(match[1]),
-          column: null,
-          message: match[2]?.trim() || line,
+          severity: parseSeverity(match[1] ?? line),
+          line: Number(match[2]),
+          column: match[3] ? Number(match[3]) : null,
+          message: match[4]?.trim() || line,
         } satisfies ParsedDiagnosticLine
       }
 
       return {
         stage: diagnostic.stage,
+        severity: parseSeverity(line),
         line: null,
         column: null,
         message: line,
@@ -45,6 +51,7 @@ export function parseRenderDiagnostics(diagnostics: RenderDiagnostics): ParsedDi
     .filter(Boolean)
     .map((line) => ({
       stage: 'program',
+      severity: parseSeverity(line),
       line: null,
       column: null,
       message: line,

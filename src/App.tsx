@@ -9,8 +9,11 @@ import {
 } from './core/shader/templates/defaultShaders'
 import { AssetBrowserPanel } from './features/assets/AssetBrowserPanel'
 import { CompilePanel } from './features/compile-panel/CompilePanel'
-import { ShaderEditorPanel } from './features/editor/ShaderEditorPanel'
+import { ShaderConsolePanel } from './features/console/ShaderConsolePanel'
+import { ShaderEditorPanel, type DiagnosticFocusTarget } from './features/editor/ShaderEditorPanel'
 import { MaterialInspectorPanel } from './features/inspector/MaterialInspectorPanel'
+import { ShaderPresetPanel } from './features/presets/ShaderPresetPanel'
+import { shaderPresets, type ShaderPreset } from './features/presets/shaderPresets'
 import { ProjectPanel } from './features/project/ProjectPanel'
 import { ViewportPanel } from './features/viewport/ViewportPanel'
 import type {
@@ -133,6 +136,7 @@ function App() {
   const [projectStatusMessage, setProjectStatusMessage] = useState<string | null>(null)
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null)
   const [isProjectDirty, setIsProjectDirty] = useState(false)
+  const [focusedDiagnostic, setFocusedDiagnostic] = useState<DiagnosticFocusTarget | null>(null)
   const hasMountedRef = useRef(false)
   const textureAssetsRef = useRef<TextureAsset[]>([])
   const restoreInProgressRef = useRef(false)
@@ -141,6 +145,14 @@ function App() {
   const parsedLines = useMemo(() => {
     return diagnostics ? parseRenderDiagnostics(diagnostics) : []
   }, [diagnostics])
+
+  const vertexDiagnosticLines = useMemo(() => {
+    return parsedLines.filter((line) => line.stage === 'vertex')
+  }, [parsedLines])
+
+  const fragmentDiagnosticLines = useMemo(() => {
+    return parsedLines.filter((line) => line.stage === 'fragment')
+  }, [parsedLines])
 
   const usedTextureIds = useMemo(() => {
     const ids = new Set<string>()
@@ -327,6 +339,7 @@ function App() {
     snapshot: RendererStateSnapshot,
     compileMode: 'initial' | 'auto' | 'manual',
   ) => {
+    setFocusedDiagnostic(null)
     setDiagnostics(snapshot.diagnostics)
     setLastCompileSucceeded(snapshot.compileSucceeded)
     setLastCompileMode(compileMode)
@@ -506,6 +519,30 @@ function App() {
     setLastSavedAt(null)
   }
 
+  const handleSelectDiagnostic = (line: (typeof parsedLines)[number]) => {
+    if (line.stage === 'program' || line.line === null) {
+      return
+    }
+
+    setFocusedDiagnostic({
+      stage: line.stage,
+      line: line.line,
+      column: line.column,
+      token: Date.now(),
+    })
+  }
+
+  const handleApplyPreset = (preset: ShaderPreset) => {
+    setVertexSource(preset.vertexSource)
+    setFragmentSource(preset.fragmentSource)
+    setFocusedDiagnostic(null)
+    setIsCompiling(true)
+    setCompileRequest((currentValue) => ({
+      token: currentValue.token + 1,
+      mode: 'manual',
+    }))
+  }
+
   return (
     <main className="app-shell">
       <section className="hero-panel">
@@ -544,25 +581,41 @@ function App() {
               title="Vertex Shader"
               stage="vertex"
               value={vertexSource}
+              diagnostics={vertexDiagnosticLines}
+              focusTarget={focusedDiagnostic}
               onChange={handleVertexSourceChange}
             />
             <ShaderEditorPanel
               title="Fragment Shader"
               stage="fragment"
               value={fragmentSource}
+              diagnostics={fragmentDiagnosticLines}
+              focusTarget={focusedDiagnostic}
               onChange={handleFragmentSourceChange}
             />
           </div>
 
+          <ShaderPresetPanel
+            presets={shaderPresets}
+            activeVertexSource={vertexSource}
+            activeFragmentSource={fragmentSource}
+            onApplyPreset={handleApplyPreset}
+          />
+
           <CompilePanel
-            diagnostics={diagnostics}
-            parsedLines={parsedLines}
             autoCompile={autoCompile}
+            errorCount={parsedLines.length}
             isCompiling={isCompiling}
             lastCompileMode={lastCompileMode}
             lastCompileSucceeded={lastCompileSucceeded}
             onCompile={handleCompileClick}
             onToggleAutoCompile={setAutoCompile}
+          />
+
+          <ShaderConsolePanel
+            diagnostics={diagnostics}
+            lines={parsedLines}
+            onSelectLine={handleSelectDiagnostic}
           />
 
           <MaterialInspectorPanel

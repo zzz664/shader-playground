@@ -101,6 +101,8 @@
 
 .editor-panel,
 .compile-panel,
+.console-panel,
+.preset-panel,
 .inspector-panel,
 .project-panel,
 .asset-browser-panel {
@@ -130,17 +132,18 @@
   text-transform: uppercase;
 }
 
-.editor-panel__textarea {
-  width: 100%;
-  min-height: 300px;
+.editor-panel__editor {
+  overflow: hidden;
   margin-top: 1rem;
-  padding: 1rem;
   border: 1px solid rgba(148, 163, 184, 0.18);
   border-radius: 1rem;
   background: rgba(2, 6, 23, 0.85);
-  color: #e2e8f0;
-  resize: vertical;
-  line-height: 1.6;
+}
+
+.editor-panel__hint {
+  margin: 0.75rem 0 0;
+  color: #94a3b8;
+  font-size: 0.8rem;
 }
 
 .compile-panel__button {
@@ -188,6 +191,112 @@
 .compile-panel__facts dd {
   margin: 0.4rem 0 0;
   font-weight: 700;
+}
+
+.console-panel__header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.console-panel__body {
+  margin-top: 1rem;
+  padding: 1rem;
+  border-radius: 1rem;
+  background: rgba(2, 6, 23, 0.62);
+}
+
+.console-panel__list {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.console-line {
+  border-radius: 0.9rem;
+}
+
+.console-line__button {
+  display: grid;
+  width: 100%;
+  gap: 0.45rem;
+  padding: 0.9rem;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 0.9rem;
+  background: rgba(15, 23, 42, 0.78);
+  text-align: left;
+  cursor: pointer;
+}
+
+.console-line__button--error {
+  border-color: rgba(239, 68, 68, 0.2);
+  background: rgba(127, 29, 29, 0.2);
+}
+
+.console-line__button--warning {
+  border-color: rgba(245, 158, 11, 0.24);
+  background: rgba(120, 53, 15, 0.25);
+}
+
+.console-line__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  color: #fca5a5;
+  font-size: 0.82rem;
+}
+
+.console-line p,
+.console-panel__empty {
+  margin: 0.5rem 0 0;
+  color: #fecaca;
+}
+
+.console-line__button--warning p,
+.console-line__button--warning .console-line__meta {
+  color: #fde68a;
+}
+
+.console-panel__empty {
+  color: #cbd5e1;
+}
+
+.preset-panel__header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.preset-panel__body {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.preset-panel__select {
+  display: grid;
+  gap: 0.45rem;
+  color: #cbd5e1;
+  font-size: 0.85rem;
+}
+
+.preset-panel__select select {
+  min-height: 2.5rem;
+  padding: 0 0.8rem;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 0.8rem;
+  background: rgba(15, 23, 42, 0.9);
+  color: #e2e8f0;
+}
+
+.preset-panel__description {
+  margin: 0;
+  color: #cbd5e1;
+  line-height: 1.5;
 }
 
 .compile-panel__logs {
