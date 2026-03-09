@@ -1,4 +1,5 @@
 import type { MaterialPropertyDefinition, MaterialPropertyValue } from '../../../shared/types/materialProperty'
+import { parseShaderMetadata } from '../metadata/parseShaderMetadata'
 
 const builtinUniformNames = new Set([
   'uTime',
@@ -57,9 +58,17 @@ function getSupportedUniformTemplate(
 export function reflectActiveUniforms(
   gl: WebGL2RenderingContext,
   program: WebGLProgram,
+  shaderSources?: {
+    vertexSource?: string
+    fragmentSource?: string
+  },
 ): MaterialPropertyDefinition[] {
   const activeUniformCount = gl.getProgramParameter(program, gl.ACTIVE_UNIFORMS) as number
   const properties: MaterialPropertyDefinition[] = []
+  const metadataMap = parseShaderMetadata(
+    shaderSources?.vertexSource ?? '',
+    shaderSources?.fragmentSource ?? '',
+  )
 
   for (let index = 0; index < activeUniformCount; index += 1) {
     const uniform = gl.getActiveUniform(program, index)
@@ -77,16 +86,50 @@ export function reflectActiveUniforms(
       continue
     }
 
+    const metadata = metadataMap.get(normalizedName)
+
     properties.push({
       name: normalizedName,
       valueType: supportedTemplate.valueType,
-      uiKind: supportedTemplate.uiKind,
+      uiKind: resolveUiKind(supportedTemplate, metadata?.uiKind),
       componentCount: supportedTemplate.componentCount,
       builtin: builtinUniformNames.has(normalizedName),
+      label: metadata?.label,
+      group: metadata?.group,
+      min: metadata?.min,
+      max: metadata?.max,
+      step: metadata?.step,
     })
   }
 
   return properties
+}
+
+function resolveUiKind(
+  template: MaterialPropertyTemplate,
+  metadataUiKind: MaterialPropertyDefinition['uiKind'] | undefined,
+) {
+  if (!metadataUiKind) {
+    return template.uiKind
+  }
+
+  if (metadataUiKind === 'color' && (template.valueType === 'vec3' || template.valueType === 'vec4')) {
+    return metadataUiKind
+  }
+
+  if (metadataUiKind === 'slider' && template.valueType === 'float') {
+    return metadataUiKind
+  }
+
+  if (metadataUiKind === 'checkbox' && template.valueType === 'bool') {
+    return metadataUiKind
+  }
+
+  if (metadataUiKind === 'texture' && template.valueType === 'texture2D') {
+    return metadataUiKind
+  }
+
+  return template.uiKind
 }
 
 export function createDefaultMaterialValue(definition: MaterialPropertyDefinition): MaterialPropertyValue {

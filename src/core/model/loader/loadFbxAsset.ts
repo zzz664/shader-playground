@@ -15,6 +15,7 @@ import type {
 } from '../../../shared/types/modelAsset'
 
 const VERTEX_STRIDE = 8
+const MAX_FBX_FILE_SIZE = 50 * 1024 * 1024
 
 interface BoundsState {
   min: [number, number, number]
@@ -32,6 +33,9 @@ export async function loadFbxAsset(files: File[]): Promise<ModelAsset> {
 
   if (!fbxFile) {
     throw new Error('FBX 파일을 찾지 못했습니다. .fbx 파일과 관련 텍스처를 함께 선택해 주세요.')
+  }
+  if (fbxFile.size > MAX_FBX_FILE_SIZE) {
+    throw new Error('FBX 파일은 50MB 이하만 업로드할 수 있습니다.')
   }
 
   const relatedFiles = new Map<string, File>()

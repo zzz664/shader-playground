@@ -318,7 +318,7 @@ export function ViewportPanel({
             </div>
             <div>
               <dt>삼각형</dt>
-              <dd>{modelAsset.indices.length / 3}</dd>
+              <dd>{Math.floor(modelAsset.indices.length / 3)}</dd>
             </div>
             <div>
               <dt>재질</dt>

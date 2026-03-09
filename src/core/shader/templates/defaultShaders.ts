@@ -48,12 +48,12 @@ uniform float uTime;
 uniform vec2 uResolution;
 uniform int uSceneMode;
 uniform vec3 uCameraPos;
-uniform float edgePower;
-uniform vec2 uvOffset;
-uniform vec3 tintColor;
-uniform bool useTint;
-uniform int bandCount;
-uniform sampler2D detailTex;
+uniform float edgePower;   // @ui slider @min 0 @max 5 @step 0.01 @label Edge Power @group Surface
+uniform vec2 uvOffset;     // @label UV Offset @group Surface
+uniform vec3 tintColor;    // @ui color @label Tint Color @group Surface
+uniform bool useTint;      // @ui checkbox @label Use Tint @group Surface
+uniform int bandCount;     // @label Band Count @group Noise
+uniform sampler2D detailTex; // @ui texture @label Detail Texture @group Noise
 
 void main() {
   vec2 uv = vUv + uvOffset;

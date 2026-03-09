@@ -7,15 +7,18 @@ import {
   defaultFragmentShaderSource,
   defaultVertexShaderSource,
 } from './core/shader/templates/defaultShaders'
+import { AssetBrowserPanel } from './features/assets/AssetBrowserPanel'
 import { CompilePanel } from './features/compile-panel/CompilePanel'
 import { ShaderEditorPanel } from './features/editor/ShaderEditorPanel'
 import { MaterialInspectorPanel } from './features/inspector/MaterialInspectorPanel'
+import { ProjectPanel } from './features/project/ProjectPanel'
 import { ViewportPanel } from './features/viewport/ViewportPanel'
 import type {
   MaterialPropertyDefinition,
   MaterialPropertyValue,
 } from './shared/types/materialProperty'
 import type { ModelAsset } from './shared/types/modelAsset'
+import type { ProjectSnapshot } from './shared/types/projectSnapshot'
 import type { RenderDiagnostics } from './shared/types/renderDiagnostics'
 import type {
   BlendMode,
@@ -24,8 +27,20 @@ import type {
   ViewportCameraState,
 } from './shared/types/scenePreview'
 import type { TextureAsset } from './shared/types/textureAsset'
-import { loadTextureAsset } from './shared/utils/loadTextureAsset'
+import {
+  createTextureAssetFromSerialized,
+  disposeTextureAsset,
+  loadTextureAsset,
+  serializeTextureAsset,
+} from './shared/utils/loadTextureAsset'
 import { parseRenderDiagnostics } from './shared/utils/parseDiagnostics'
+import {
+  clearStoredProjectSnapshot,
+  loadStoredProjectSnapshot,
+  restoreModelAsset,
+  saveProjectSnapshot,
+  serializeModelAsset,
+} from './shared/utils/projectPersistence'
 
 function buildAutoTextureBindings(
   currentValues: Record<string, MaterialPropertyValue>,
@@ -66,6 +81,29 @@ function buildAutoTextureBindings(
   return nextValues
 }
 
+function removeTextureReferences(
+  values: Record<string, MaterialPropertyValue>,
+  assetIds: Set<string>,
+) {
+  return Object.fromEntries(
+    Object.entries(values).map(([name, value]) => [
+      name,
+      typeof value === 'string' && assetIds.has(value) ? null : value,
+    ]),
+  )
+}
+
+function formatSavedAt(savedAt: string) {
+  return new Date(savedAt).toLocaleString('ko-KR')
+}
+
+function buildProjectSignature(snapshot: ProjectSnapshot) {
+  return JSON.stringify({
+    ...snapshot,
+    savedAt: '',
+  })
+}
+
 function App() {
   const [vertexSource, setVertexSource] = useState(defaultVertexShaderSource)
   const [fragmentSource, setFragmentSource] = useState(defaultFragmentShaderSource)
@@ -92,12 +130,109 @@ function App() {
   })
   const [modelAsset, setModelAsset] = useState<ModelAsset | null>(null)
   const [modelLoadError, setModelLoadError] = useState<string | null>(null)
+  const [projectStatusMessage, setProjectStatusMessage] = useState<string | null>(null)
+  const [lastSavedAt, setLastSavedAt] = useState<string | null>(null)
+  const [isProjectDirty, setIsProjectDirty] = useState(false)
   const hasMountedRef = useRef(false)
   const textureAssetsRef = useRef<TextureAsset[]>([])
+  const restoreInProgressRef = useRef(false)
+  const projectSignatureRef = useRef('')
 
   const parsedLines = useMemo(() => {
     return diagnostics ? parseRenderDiagnostics(diagnostics) : []
   }, [diagnostics])
+
+  const usedTextureIds = useMemo(() => {
+    const ids = new Set<string>()
+
+    Object.values(materialValues).forEach((value) => {
+      if (typeof value === 'string') {
+        ids.add(value)
+      }
+    })
+
+    modelAsset?.textureBindings.forEach((binding) => {
+      ids.add(binding.textureAssetId)
+    })
+
+    return ids
+  }, [materialValues, modelAsset])
+
+  const projectSnapshot = useMemo<ProjectSnapshot>(
+    () => ({
+      version: 1,
+      savedAt: new Date().toISOString(),
+      vertexSource,
+      fragmentSource,
+      sceneMode,
+      geometryId,
+      blendMode,
+      cameraState,
+      materialValues,
+      textureAssets: textureAssets.map(serializeTextureAsset),
+      modelAsset: serializeModelAsset(modelAsset),
+    }),
+    [
+      blendMode,
+      cameraState,
+      fragmentSource,
+      geometryId,
+      materialValues,
+      modelAsset,
+      sceneMode,
+      textureAssets,
+      vertexSource,
+    ],
+  )
+
+  const applyProjectSnapshot = async (snapshot: ProjectSnapshot, sourceLabel: string) => {
+    restoreInProgressRef.current = true
+
+    try {
+      const restoredTextures = await Promise.all(
+        snapshot.textureAssets.map((asset) => createTextureAssetFromSerialized(asset)),
+      )
+      const restoredModelAsset = restoreModelAsset(snapshot.modelAsset, restoredTextures)
+
+      textureAssetsRef.current.forEach((asset) => {
+        disposeTextureAsset(asset)
+      })
+
+      setTextureAssets(restoredTextures)
+      setVertexSource(snapshot.vertexSource)
+      setFragmentSource(snapshot.fragmentSource)
+      setSceneMode(snapshot.sceneMode)
+      setGeometryId(snapshot.geometryId)
+      setBlendMode(snapshot.blendMode)
+      setCameraState(snapshot.cameraState)
+      setMaterialValues(snapshot.materialValues)
+      setModelAsset(restoredModelAsset)
+      setTextureLoadError(null)
+      setModelLoadError(null)
+      setLastSavedAt(formatSavedAt(snapshot.savedAt))
+      setProjectStatusMessage(`${sourceLabel} 불러오기를 완료했습니다.`)
+      projectSignatureRef.current = buildProjectSignature(snapshot)
+      setIsProjectDirty(false)
+      setIsCompiling(true)
+      setCompileRequest((currentValue) => ({
+        token: currentValue.token + 1,
+        mode: 'manual',
+      }))
+    } finally {
+      restoreInProgressRef.current = false
+    }
+  }
+
+  useEffect(() => {
+    void (async () => {
+      const storedSnapshot = loadStoredProjectSnapshot()
+      if (storedSnapshot) {
+        await applyProjectSnapshot(storedSnapshot, '로컬 프로젝트')
+      }
+
+      hasMountedRef.current = true
+    })()
+  }, [])
 
   useEffect(() => {
     if (!hasMountedRef.current || !autoCompile) {
@@ -117,7 +252,51 @@ function App() {
   }, [autoCompile, fragmentSource, vertexSource])
 
   useEffect(() => {
-    hasMountedRef.current = true
+    if (!hasMountedRef.current || restoreInProgressRef.current) {
+      return
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      const snapshot = projectSnapshot
+      try {
+        saveProjectSnapshot(snapshot)
+        projectSignatureRef.current = buildProjectSignature(snapshot)
+        setLastSavedAt(formatSavedAt(snapshot.savedAt))
+        setProjectStatusMessage('최근 작업을 자동 저장했습니다.')
+        setIsProjectDirty(false)
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : '자동 저장 중 오류가 발생했습니다.'
+        setProjectStatusMessage(message)
+      }
+    }, 500)
+
+    return () => {
+      window.clearTimeout(timeoutId)
+    }
+  }, [
+    projectSnapshot,
+  ])
+
+  useEffect(() => {
+    if (!hasMountedRef.current || restoreInProgressRef.current) {
+      return
+    }
+
+    const nextSignature = buildProjectSignature(projectSnapshot)
+    setIsProjectDirty(nextSignature !== projectSignatureRef.current)
+  }, [projectSnapshot])
+
+  useEffect(() => {
+    textureAssetsRef.current = textureAssets
+  }, [textureAssets])
+
+  useEffect(() => {
+    return () => {
+      textureAssetsRef.current.forEach((asset) => {
+        disposeTextureAsset(asset)
+      })
+    }
   }, [])
 
   const handleVertexSourceChange = (nextValue: string) => {
@@ -152,7 +331,10 @@ function App() {
     setLastCompileSucceeded(snapshot.compileSucceeded)
     setLastCompileMode(compileMode)
     setMaterialProperties(snapshot.materialProperties)
-    setMaterialValues(snapshot.materialValues)
+    setMaterialValues((currentValues) => ({
+      ...snapshot.materialValues,
+      ...currentValues,
+    }))
     setSceneMode(snapshot.sceneMode)
     setGeometryId(snapshot.geometryId)
     setBlendMode(snapshot.blendMode)
@@ -170,92 +352,186 @@ function App() {
     setTextureLoadError(null)
 
     try {
-      const { asset } = await loadTextureAsset(file)
+      const { asset } = await loadTextureAsset(file, { sourceKind: 'manual' })
       setTextureAssets((currentAssets) => [...currentAssets, asset])
       setMaterialValues((currentValues) => ({
         ...currentValues,
         [propertyName]: asset.id,
       }))
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : '텍스처를 불러오지 못했습니다.'
+      const message = error instanceof Error ? error.message : '텍스처를 불러오지 못했습니다.'
       setTextureLoadError(message)
     }
+  }
+
+  const removeTextureAssetsByIds = (assetIds: Set<string>) => {
+    setTextureAssets((currentAssets) => {
+      const nextAssets = currentAssets.filter((asset) => {
+        if (assetIds.has(asset.id)) {
+          disposeTextureAsset(asset)
+          return false
+        }
+
+        return true
+      })
+
+      return nextAssets
+    })
+    setMaterialValues((currentValues) => removeTextureReferences(currentValues, assetIds))
+    setModelAsset((currentModelAsset) => {
+      if (!currentModelAsset) {
+        return null
+      }
+
+      return {
+        ...currentModelAsset,
+        textureAssets: currentModelAsset.textureAssets.filter((asset) => !assetIds.has(asset.id)),
+        textureBindings: currentModelAsset.textureBindings.filter(
+          (binding) => !assetIds.has(binding.textureAssetId),
+        ),
+      }
+    })
+  }
+
+  const clearCurrentModel = () => {
+    if (modelAsset) {
+      const modelTextureIds = new Set(
+        textureAssets.filter((asset) => asset.ownerModelId === modelAsset.id).map((asset) => asset.id),
+      )
+      if (modelTextureIds.size > 0) {
+        removeTextureAssetsByIds(modelTextureIds)
+      }
+    }
+
+    setModelAsset(null)
+    setModelLoadError(null)
   }
 
   const handleModelUpload = async (files: File[]) => {
     setModelLoadError(null)
 
     try {
-      const nextModelAsset = await loadFbxAsset(files)
-      const frameState = frameModelBounds(nextModelAsset.bounds)
-
-      if (nextModelAsset.textureAssets.length > 0) {
-        setTextureAssets((currentAssets) => [...currentAssets, ...nextModelAsset.textureAssets])
+      if (modelAsset) {
+        clearCurrentModel()
       }
 
-      setModelAsset(nextModelAsset)
+      const nextModelAsset = await loadFbxAsset(files)
+      const frameState = frameModelBounds(nextModelAsset.bounds)
+      const taggedTextureAssets = nextModelAsset.textureAssets.map((asset) => ({
+        ...asset,
+        sourceKind: 'model' as const,
+        ownerModelId: nextModelAsset.id,
+      }))
+      const nextTaggedModelAsset: ModelAsset = {
+        ...nextModelAsset,
+        textureAssets: taggedTextureAssets,
+      }
+
+      if (taggedTextureAssets.length > 0) {
+        setTextureAssets((currentAssets) => [...currentAssets, ...taggedTextureAssets])
+      }
+
+      setModelAsset(nextTaggedModelAsset)
       setSceneMode('model')
       setCameraState((currentState) => ({
         ...currentState,
         distance: frameState.distance,
       }))
       setMaterialValues((currentValues) =>
-        buildAutoTextureBindings(currentValues, materialProperties, nextModelAsset),
+        buildAutoTextureBindings(currentValues, materialProperties, nextTaggedModelAsset),
       )
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'FBX 모델을 불러오지 못했습니다.'
+      const message = error instanceof Error ? error.message : 'FBX 모델을 불러오지 못했습니다.'
       setModelLoadError(message)
     }
   }
 
-  const handleModelClear = () => {
-    setModelAsset(null)
-    setModelLoadError(null)
+  const handleDeleteTexture = (assetId: string) => {
+    removeTextureAssetsByIds(new Set([assetId]))
+    setProjectStatusMessage('텍스처 자산을 삭제하고 참조를 정리했습니다.')
   }
 
-  useEffect(() => {
-    textureAssetsRef.current = textureAssets
-  }, [textureAssets])
-
-  useEffect(() => {
-    return () => {
-      textureAssetsRef.current.forEach((asset) => {
-        URL.revokeObjectURL(asset.previewUrl)
-        asset.bitmap.close()
-      })
+  const handleSaveProject = () => {
+    const snapshot = projectSnapshot
+    try {
+      saveProjectSnapshot(snapshot)
+      projectSignatureRef.current = buildProjectSignature(snapshot)
+      setLastSavedAt(formatSavedAt(snapshot.savedAt))
+      setProjectStatusMessage('프로젝트를 로컬 저장소에 저장했습니다.')
+      setIsProjectDirty(false)
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : '프로젝트 저장 중 오류가 발생했습니다.'
+      setProjectStatusMessage(message)
     }
-  }, [])
+  }
+
+  const handleLoadProject = async () => {
+    const snapshot = loadStoredProjectSnapshot()
+    if (!snapshot) {
+      setProjectStatusMessage('저장된 로컬 프로젝트가 없습니다.')
+      return
+    }
+
+    await applyProjectSnapshot(snapshot, '로컬 프로젝트')
+  }
+
+  const handleExportProject = () => {
+    const snapshot = projectSnapshot
+    const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `shader-playground-${Date.now()}.json`
+    link.click()
+    URL.revokeObjectURL(url)
+    setProjectStatusMessage('프로젝트 JSON 내보내기를 완료했습니다.')
+  }
+
+  const handleImportProject = async (file: File) => {
+    try {
+      const parsedSnapshot = JSON.parse(await file.text()) as ProjectSnapshot
+      await applyProjectSnapshot(parsedSnapshot, 'JSON 프로젝트')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '프로젝트 파일을 불러오지 못했습니다.'
+      setProjectStatusMessage(message)
+    }
+  }
+
+  const handleClearStoredProject = () => {
+    clearStoredProjectSnapshot()
+    setProjectStatusMessage('로컬 저장본을 삭제했습니다.')
+    projectSignatureRef.current = ''
+    setIsProjectDirty(true)
+    setLastSavedAt(null)
+  }
 
   return (
     <main className="app-shell">
       <section className="hero-panel">
-        <p className="panel__eyebrow">FBX Start</p>
-        <h1>Binary/ASCII FBX 모델과 텍스처를 셰이더에 연결하는 플레이그라운드</h1>
+        <p className="panel__eyebrow">Sprint 8</p>
+        <h1>프로젝트 저장과 에셋 관리를 포함한 셰이더 플레이그라운드</h1>
         <p className="hero-panel__description">
-          이번 단계에서는 Binary/ASCII FBX 정적 메시를 읽고 node transform과 normal/UV를
-          반영한 뒤, 관련 텍스처를 현재 셰이더의 sampler 슬롯과 연결할 수 있는 최소 경로를
-          구현합니다.
+          이번 단계에서는 현재 작업 상태를 저장하고 다시 불러올 수 있게 만들고, 업로드한
+          텍스처와 모델을 한 곳에서 확인하고 정리할 수 있는 asset browser를 추가합니다.
         </p>
 
         <div className="hero-panel__grid">
           <article className="info-card">
             <h2>이번 작업 항목</h2>
             <ul>
-              <li>FBX 업로드</li>
-              <li>Binary/ASCII FBX 메시 파싱</li>
-              <li>bounds 기반 프레이밍</li>
-              <li>FBX 머티리얼 텍스처 연결</li>
+              <li>project save / load</li>
+              <li>asset browser</li>
+              <li>cleanup / stability 작업</li>
             </ul>
           </article>
 
           <article className="info-card">
             <h2>주의점</h2>
             <ul>
-              <li>이번 단계는 Binary/ASCII FBX 정적 메시를 우선 지원합니다.</li>
-              <li>스킨과 애니메이션은 아직 범위 밖입니다.</li>
-              <li>sampler 슬롯이 여러 개인 경우 자동 연결은 보수적으로만 수행합니다.</li>
+              <li>최근 작업 저장은 localStorage 기반으로 구현합니다.</li>
+              <li>자산 삭제 시 연결된 shader 참조와 모델 텍스처 참조를 함께 정리합니다.</li>
+              <li>IndexedDB 기반 대용량 저장은 이번 범위에 포함하지 않습니다.</li>
             </ul>
           </article>
         </div>
@@ -297,6 +573,17 @@ function App() {
             onValueChange={handleMaterialValueChange}
             onTextureUpload={handleTextureUpload}
           />
+
+          <ProjectPanel
+            isDirty={isProjectDirty}
+            lastSavedAt={lastSavedAt}
+            projectStatusMessage={projectStatusMessage}
+            onSave={handleSaveProject}
+            onLoad={handleLoadProject}
+            onExport={handleExportProject}
+            onImport={handleImportProject}
+            onClearStored={handleClearStoredProject}
+          />
         </div>
 
         <aside className="workspace-sidebar">
@@ -317,8 +604,16 @@ function App() {
             onBlendModeChange={setBlendMode}
             onCameraChange={setCameraState}
             onModelUpload={handleModelUpload}
-            onModelClear={handleModelClear}
+            onModelClear={clearCurrentModel}
             onCompileResult={handleCompileResult}
+          />
+
+          <AssetBrowserPanel
+            modelAsset={modelAsset}
+            textureAssets={textureAssets}
+            usedTextureIds={usedTextureIds}
+            onDeleteTexture={handleDeleteTexture}
+            onClearModel={clearCurrentModel}
           />
         </aside>
       </section>

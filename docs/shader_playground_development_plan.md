@@ -60,7 +60,7 @@
 - 컴파일 및 링크 오류 표시
 - Fullscreen Quad 미리보기
 - 기본 도형(plane, cube, sphere 등) 미리보기
-- 업로드한 glTF / GLB 모델 프리뷰
+- 업로드한 FBX 모델 프리뷰
 - 셰이더 변수 기반 자동 UI 생성
 - sampler2D 기반 텍스처 슬롯 생성
 - 이미지 텍스처 업로드 및 연결
@@ -69,6 +69,7 @@
 ## 3.2 2차 범위
 
 - OBJ 지원
+- glTF / GLB 재도입 검토
 - 머티리얼 프로퍼티 메타데이터 주석 파서
 - 프로퍼티 그룹화 및 표시명 설정
 - Asset Browser 개선
@@ -114,10 +115,11 @@ MVP에서는 WebGL2 기준 GLSL ES 3.00을 사용합니다.
 
 1차 지원 포맷은 다음과 같이 제한합니다.
 
-- 우선 지원: `.gltf`, `.glb`
+- 우선 지원: `.fbx`
 - 후순위 지원: `.obj`
+- 추후 검토: `.gltf`, `.glb`
 
-이유는 glTF가 메시, UV, normal, material, scene hierarchy 등 런타임 친화적인 구조를 제공하기 때문입니다.
+이유는 현재 구현이 FBX 정적 메시 프리뷰와 텍스처 연결 경로를 기준으로 진행되었고, DCC 툴 테스트 자산 흐름을 우선 맞추기 위함입니다.
 
 ## 4.4 텍스처 포맷
 
@@ -277,7 +279,7 @@ uniform vec4 edgeColor;
 
 역할:
 
-- glTF / GLB 로드
+- FBX 로드
 - 메시 데이터 추출
 - position / normal / uv 매핑
 - 버퍼 생성
@@ -599,7 +601,7 @@ src/
 
 ### 작업 항목
 
-- glTF / GLB 로더 통합
+- FBX 로더 통합
 - 메시 추출 및 버퍼 생성
 - position / normal / uv attribute 매핑
 - 모델의 경계 박스 계산
@@ -624,7 +626,7 @@ src/
 
 ### 완료 기준
 
-- `.glb` 업로드 후 모델이 보이고 셰이더 적용 결과가 확인됨
+- `.fbx` 업로드 후 모델이 보이고 셰이더 적용 결과가 확인됨
 
 ---
 
@@ -996,7 +998,7 @@ Inspector는 다음 섹션으로 나누는 것이 좋습니다.
 ### 그 다음
 
 7. 기본 도형 미리보기
-8. glTF / GLB model preview
+8. FBX model preview
 9. orbit camera
 10. project save/load
 11. metadata 기반 inspector 고도화
@@ -1046,7 +1048,7 @@ Inspector는 다음 섹션으로 나누는 것이 좋습니다.
 
 ## Sprint 6
 
-- glTF / GLB import
+- FBX import
 - model framing
 - material override
 

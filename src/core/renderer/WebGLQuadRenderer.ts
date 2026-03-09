@@ -66,6 +66,8 @@ export class WebGLQuadRenderer {
   private viewportHeight = 0
   private diagnostics: RenderDiagnostics
   private compileSucceeded = false
+  private vertexSource: string
+  private fragmentSource: string
   private materialProperties: MaterialPropertyDefinition[] = []
   private materialValues: Record<string, MaterialPropertyValue> = {}
   private materialUniformLocations = new Map<string, WebGLUniformLocation>()
@@ -94,11 +96,13 @@ export class WebGLQuadRenderer {
   ) {
     this.canvas = canvas
     this.gl = createWebGL2Context(canvas)
+    this.vertexSource = initialSources.vertexSource ?? defaultVertexShaderSource
+    this.fragmentSource = initialSources.fragmentSource ?? defaultFragmentShaderSource
 
     const { program, diagnostics } = createShaderProgram(
       this.gl,
-      initialSources.vertexSource ?? defaultVertexShaderSource,
-      initialSources.fragmentSource ?? defaultFragmentShaderSource,
+      this.vertexSource,
+      this.fragmentSource,
     )
 
     this.diagnostics = diagnostics
@@ -176,6 +180,8 @@ export class WebGLQuadRenderer {
 
     this.gl.deleteProgram(this.program)
     this.program = program
+    this.vertexSource = vertexSource
+    this.fragmentSource = fragmentSource
     this.uniformLocations = this.getRendererUniformLocations()
     this.syncMaterialProperties()
     this.compileSucceeded = true
@@ -402,7 +408,10 @@ export class WebGLQuadRenderer {
   }
 
   private syncMaterialProperties() {
-    const reflectedProperties = reflectActiveUniforms(this.gl, this.program).filter((property) => !property.builtin)
+    const reflectedProperties = reflectActiveUniforms(this.gl, this.program, {
+      vertexSource: this.vertexSource,
+      fragmentSource: this.fragmentSource,
+    }).filter((property) => !property.builtin)
     const nextUniformLocations = new Map<string, WebGLUniformLocation>()
     const nextValues: Record<string, MaterialPropertyValue> = {}
 

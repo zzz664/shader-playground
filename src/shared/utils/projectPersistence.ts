@@ -1,0 +1,69 @@
+import type { ModelAsset } from '../types/modelAsset'
+import type { ProjectSnapshot, SerializedModelAsset } from '../types/projectSnapshot'
+import type { TextureAsset } from '../types/textureAsset'
+
+export const PROJECT_STORAGE_KEY = 'shader-playground.project.v1'
+
+export function serializeModelAsset(modelAsset: ModelAsset | null): SerializedModelAsset | null {
+  if (!modelAsset) {
+    return null
+  }
+
+  return {
+    id: modelAsset.id,
+    name: modelAsset.name,
+    vertices: Array.from(modelAsset.vertices),
+    indices: Array.from(modelAsset.indices),
+    indexFormat: modelAsset.indices instanceof Uint32Array ? 'uint32' : 'uint16',
+    bounds: modelAsset.bounds,
+    meshCount: modelAsset.meshCount,
+    materialNames: modelAsset.materialNames,
+    textureBindings: modelAsset.textureBindings,
+    textureAssetIds: modelAsset.textureAssets.map((asset) => asset.id),
+    warningMessages: modelAsset.warningMessages,
+  }
+}
+
+export function restoreModelAsset(
+  serializedModelAsset: SerializedModelAsset | null,
+  textureAssets: TextureAsset[],
+): ModelAsset | null {
+  if (!serializedModelAsset) {
+    return null
+  }
+
+  const textureAssetIds = new Set(serializedModelAsset.textureAssetIds)
+
+  return {
+    id: serializedModelAsset.id,
+    name: serializedModelAsset.name,
+    vertices: new Float32Array(serializedModelAsset.vertices),
+    indices:
+      serializedModelAsset.indexFormat === 'uint32'
+        ? new Uint32Array(serializedModelAsset.indices)
+        : new Uint16Array(serializedModelAsset.indices),
+    bounds: serializedModelAsset.bounds,
+    meshCount: serializedModelAsset.meshCount,
+    materialNames: serializedModelAsset.materialNames,
+    textureBindings: serializedModelAsset.textureBindings,
+    textureAssets: textureAssets.filter((asset) => textureAssetIds.has(asset.id)),
+    warningMessages: serializedModelAsset.warningMessages,
+  }
+}
+
+export function saveProjectSnapshot(snapshot: ProjectSnapshot) {
+  localStorage.setItem(PROJECT_STORAGE_KEY, JSON.stringify(snapshot))
+}
+
+export function loadStoredProjectSnapshot() {
+  const rawValue = localStorage.getItem(PROJECT_STORAGE_KEY)
+  if (!rawValue) {
+    return null
+  }
+
+  return JSON.parse(rawValue) as ProjectSnapshot
+}
+
+export function clearStoredProjectSnapshot() {
+  localStorage.removeItem(PROJECT_STORAGE_KEY)
+}
