@@ -7,7 +7,11 @@ interface ShaderConsolePanelProps {
 }
 
 function formatStage(stage: ParsedDiagnosticLine['stage']) {
-  return stage === 'program' ? 'program' : stage
+  if (stage === 'program') {
+    return 'program'
+  }
+
+  return stage === 'vertex' ? 'vertex' : 'fragment'
 }
 
 export function ShaderConsolePanel({ diagnostics, lines, onSelectLine }: ShaderConsolePanelProps) {
@@ -19,7 +23,7 @@ export function ShaderConsolePanel({ diagnostics, lines, onSelectLine }: ShaderC
           <h2>셰이더 콘솔</h2>
         </div>
         <span className={`status-chip ${lines.length > 0 ? 'status-chip--error' : 'status-chip--ready'}`}>
-          {lines.length > 0 ? '오류 출력 중' : '오류 없음'}
+          {lines.length > 0 ? `진단 ${lines.length}건` : '오류 없음'}
         </span>
       </div>
 
@@ -48,7 +52,7 @@ export function ShaderConsolePanel({ diagnostics, lines, onSelectLine }: ShaderC
           </ul>
         ) : (
           <p className="console-panel__empty">
-            {diagnostics ? '현재 컴파일 오류가 없습니다.' : '아직 출력할 컴파일 로그가 없습니다.'}
+            {diagnostics ? '현재 컴파일 오류가 없습니다.' : '아직 출력된 컴파일 로그가 없습니다.'}
           </p>
         )}
       </div>
