@@ -16,7 +16,7 @@ import {
   ViewUpdate,
 } from '@codemirror/view'
 import { tags } from '@lezer/highlight'
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, type ReactNode } from 'react'
 import type { Diagnostic } from '@codemirror/lint'
 import type { ParsedDiagnosticLine } from '../../shared/types/renderDiagnostics'
 import type { DiagnosticFocusTarget } from './ShaderEditorPanel'
@@ -37,6 +37,7 @@ interface CodeMirrorShaderEditorProps {
   vertexDiagnostics: ParsedDiagnosticLine[]
   fragmentDiagnostics: ParsedDiagnosticLine[]
   focusTarget: DiagnosticFocusTarget | null
+  presetSlot?: ReactNode
   onStageChange: (stage: ShaderEditorStage) => void
   onVertexChange: (nextValue: string) => void
   onFragmentChange: (nextValue: string) => void
@@ -186,10 +187,6 @@ function toCodeMirrorDiagnostics(lines: ParsedDiagnosticLine[], state: EditorSta
     })
 }
 
-function getStageTitle(stage: ShaderEditorStage) {
-  return stage === 'vertex' ? 'Vertex Shader' : 'Fragment Shader'
-}
-
 function getStagePlaceholder(stage: ShaderEditorStage) {
   return stage === 'vertex' ? 'vertex shader를 입력하세요.' : 'fragment shader를 입력하세요.'
 }
@@ -213,6 +210,7 @@ export default function CodeMirrorShaderEditor({
   vertexDiagnostics,
   fragmentDiagnostics,
   focusTarget,
+  presetSlot,
   onStageChange,
   onVertexChange,
   onFragmentChange,
@@ -222,6 +220,7 @@ export default function CodeMirrorShaderEditor({
   const lastValueRef = useRef(getStageSource(activeStage, vertexSource, fragmentSource))
   const currentStageRef = useRef<ShaderEditorStage>(activeStage)
   const currentDiagnosticsRef = useRef<ParsedDiagnosticLine[]>([])
+  const suppressChangeRef = useRef(false)
 
   const currentSource = getStageSource(activeStage, vertexSource, fragmentSource)
   const currentDiagnostics = useMemo(
@@ -270,7 +269,7 @@ export default function CodeMirrorShaderEditor({
             },
           ]),
           EditorView.updateListener.of((update) => {
-            if (!update.docChanged) {
+            if (!update.docChanged || suppressChangeRef.current) {
               return
             }
 
@@ -376,6 +375,7 @@ export default function CodeMirrorShaderEditor({
     })
 
     if (currentSource !== lastValueRef.current) {
+      suppressChangeRef.current = true
       view.dispatch({
         changes: {
           from: 0,
@@ -384,6 +384,7 @@ export default function CodeMirrorShaderEditor({
         },
       })
       lastValueRef.current = currentSource
+      suppressChangeRef.current = false
     }
 
     view.dispatch(setDiagnostics(view.state, toCodeMirrorDiagnostics(currentDiagnostics, view.state)))
@@ -410,28 +411,29 @@ export default function CodeMirrorShaderEditor({
   return (
     <section className="editor-panel">
       <div className="editor-panel__header">
-        <div>
-          <p className="panel__eyebrow">Editor</p>
-          <h2>{getStageTitle(activeStage)}</h2>
-        </div>
+        <p className="panel__eyebrow">Editor</p>
         <span className="editor-panel__stage">{activeStage}</span>
       </div>
 
-      <div className="editor-panel__tabs">
-        <button
-          type="button"
-          className={`editor-panel__tab ${activeStage === 'vertex' ? 'editor-panel__tab--active' : ''}`}
-          onClick={() => onStageChange('vertex')}
-        >
-          vertexShader
-        </button>
-        <button
-          type="button"
-          className={`editor-panel__tab ${activeStage === 'fragment' ? 'editor-panel__tab--active' : ''}`}
-          onClick={() => onStageChange('fragment')}
-        >
-          fragmentShader
-        </button>
+      <div className="editor-panel__tabs-row">
+        <div className="editor-panel__tabs">
+          <button
+            type="button"
+            className={`editor-panel__tab ${activeStage === 'vertex' ? 'editor-panel__tab--active' : ''}`}
+            onClick={() => onStageChange('vertex')}
+          >
+            vertexShader
+          </button>
+          <button
+            type="button"
+            className={`editor-panel__tab ${activeStage === 'fragment' ? 'editor-panel__tab--active' : ''}`}
+            onClick={() => onStageChange('fragment')}
+          >
+            fragmentShader
+          </button>
+        </div>
+
+        {presetSlot ? <div className="editor-panel__preset-slot">{presetSlot}</div> : null}
       </div>
 
       <div className="editor-panel__summary">

@@ -59,6 +59,19 @@ export function createYRotationMatrix4(angleRadians: number): Matrix4 {
   ])
 }
 
+export function createTranslationMatrix4(
+  x: number,
+  y: number,
+  z: number,
+): Matrix4 {
+  return new Float32Array([
+    1, 0, 0, 0,
+    0, 1, 0, 0,
+    0, 0, 1, 0,
+    x, y, z, 1,
+  ])
+}
+
 function normalizeVector3(vector: [number, number, number]): [number, number, number] {
   const length = Math.hypot(vector[0], vector[1], vector[2]) || 1
   return [vector[0] / length, vector[1] / length, vector[2] / length]

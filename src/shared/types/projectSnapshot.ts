@@ -1,6 +1,12 @@
 import type { MaterialPropertyValue } from './materialProperty'
 import type { ModelBounds, ModelTextureBinding } from './modelAsset'
-import type { BlendMode, GeometryPreviewId, SceneMode, ViewportCameraState } from './scenePreview'
+import type {
+  BlendMode,
+  GeometryPreviewId,
+  ResolutionScale,
+  SceneMode,
+  ViewportCameraState,
+} from './scenePreview'
 import type { TextureAssetSourceKind } from './textureAsset'
 
 export interface SerializedTextureAsset {
@@ -36,6 +42,7 @@ export interface ProjectSnapshot {
   sceneMode: SceneMode
   geometryId: GeometryPreviewId
   blendMode: BlendMode
+  resolutionScale: ResolutionScale
   cameraState: ViewportCameraState
   materialValues: Record<string, MaterialPropertyValue>
   textureAssets: SerializedTextureAsset[]

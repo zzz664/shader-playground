@@ -89,11 +89,7 @@ export function MaterialInspectorPanel({
   return (
     <section className="inspector-panel">
       <div className="inspector-panel__header">
-        <div>
-          <p className="panel__eyebrow">Inspector</p>
-          <h2>메타데이터 기반 머티리얼 인스펙터</h2>
-        </div>
-        <span className="status-chip status-chip--ready">{properties.length}개</span>
+        <p className="panel__eyebrow">Inspector</p>
       </div>
 
       {groups.length > 0 ? (

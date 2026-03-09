@@ -81,6 +81,7 @@ async function convertFbxSceneToModelAsset(
   let meshCount = 0
   let missingNormalCount = 0
   let missingUvCount = 0
+  let mirroredMeshCount = 0
 
   root.traverse((node) => {
     if (!isMeshNode(node)) {
@@ -95,6 +96,7 @@ async function convertFbxSceneToModelAsset(
 
     meshCount += 1
     const bakedGeometry = geometry.clone()
+    const hasMirroredTransform = node.matrixWorld.determinant() < 0
 
     if (!bakedGeometry.getAttribute('normal')) {
       bakedGeometry.computeVertexNormals()
@@ -141,13 +143,23 @@ async function convertFbxSceneToModelAsset(
 
     const indexAttribute = bakedGeometry.getIndex()
     if (indexAttribute) {
-      for (let index = 0; index < indexAttribute.count; index += 1) {
-        mergedIndices.push(vertexOffset + indexAttribute.getX(index))
+      for (let index = 0; index < indexAttribute.count; index += 3) {
+        const a = vertexOffset + indexAttribute.getX(index)
+        const b = vertexOffset + indexAttribute.getX(index + 1)
+        const c = vertexOffset + indexAttribute.getX(index + 2)
+        pushTriangleIndices(mergedIndices, a, b, c, hasMirroredTransform)
       }
     } else {
-      for (let index = 0; index < positionAttribute.count; index += 1) {
-        mergedIndices.push(vertexOffset + index)
+      for (let index = 0; index < positionAttribute.count; index += 3) {
+        const a = vertexOffset + index
+        const b = vertexOffset + index + 1
+        const c = vertexOffset + index + 2
+        pushTriangleIndices(mergedIndices, a, b, c, hasMirroredTransform)
       }
+    }
+
+    if (hasMirroredTransform) {
+      mirroredMeshCount += 1
     }
 
     collectReferencedTextures(
@@ -170,6 +182,9 @@ async function convertFbxSceneToModelAsset(
   if (missingUvCount > 0) {
     warningMessages.push(`UV가 없는 메쉬 ${missingUvCount}개에는 0,0 UV를 사용했습니다.`)
   }
+  if (mirroredMeshCount > 0) {
+    warningMessages.push(`음수 스케일이 포함된 메쉬 ${mirroredMeshCount}개는 컬링 보정을 위해 winding을 뒤집었습니다.`)
+  }
 
   const textureBindings: ModelTextureBinding[] = []
   const textureAssets = []
@@ -191,13 +206,15 @@ async function convertFbxSceneToModelAsset(
     }
   }
 
+  const normalizedModel = normalizeModelGeometry(mergedVertices, finalizeBounds(boundsState))
+
   return {
     id: `fbx-${Date.now()}`,
     name: fbxFile.name,
-    vertices: new Float32Array(mergedVertices),
+    vertices: normalizedModel.vertices,
     indices:
       mergedIndices.length > 65535 ? new Uint32Array(mergedIndices) : new Uint16Array(mergedIndices),
-    bounds: finalizeBounds(boundsState),
+    bounds: normalizedModel.bounds,
     meshCount,
     materialNames: Array.from(materialNames),
     textureAssets,
@@ -305,4 +322,54 @@ function finalizeBounds(boundsState: BoundsState): ModelBounds {
     center,
     radius: Math.max(radius, 0.001),
   }
+}
+
+function normalizeModelGeometry(
+  vertices: number[],
+  bounds: ModelBounds,
+  targetRadius = 1,
+): {
+  vertices: Float32Array
+  bounds: ModelBounds
+} {
+  const scale = targetRadius / Math.max(bounds.radius, 0.001)
+  const nextVertices = new Float32Array(vertices.length)
+  const nextBounds = createBoundsState()
+
+  for (let index = 0; index < vertices.length; index += VERTEX_STRIDE) {
+    const x = (vertices[index] - bounds.center[0]) * scale
+    const y = (vertices[index + 1] - bounds.center[1]) * scale
+    const z = (vertices[index + 2] - bounds.center[2]) * scale
+
+    nextVertices[index] = x
+    nextVertices[index + 1] = y
+    nextVertices[index + 2] = z
+    nextVertices[index + 3] = vertices[index + 3]
+    nextVertices[index + 4] = vertices[index + 4]
+    nextVertices[index + 5] = vertices[index + 5]
+    nextVertices[index + 6] = vertices[index + 6]
+    nextVertices[index + 7] = vertices[index + 7]
+
+    expandBounds(nextBounds, [x, y, z])
+  }
+
+  return {
+    vertices: nextVertices,
+    bounds: finalizeBounds(nextBounds),
+  }
+}
+
+function pushTriangleIndices(
+  target: number[],
+  a: number,
+  b: number,
+  c: number,
+  reverseWinding: boolean,
+) {
+  if (reverseWinding) {
+    target.push(a, c, b)
+    return
+  }
+
+  target.push(a, b, c)
 }

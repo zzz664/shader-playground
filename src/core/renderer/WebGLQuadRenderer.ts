@@ -4,6 +4,7 @@ import type { RenderDiagnostics } from '../../shared/types/renderDiagnostics'
 import type {
   BlendMode,
   GeometryPreviewId,
+  ResolutionScale,
   SceneMode,
   ViewportCameraState,
 } from '../../shared/types/scenePreview'
@@ -22,7 +23,7 @@ import {
   createIdentityMatrix4,
   createLookAtMatrix4,
   createPerspectiveMatrix4,
-  createYRotationMatrix4,
+  createTranslationMatrix4,
 } from './math/matrix4'
 
 interface UploadedMesh {
@@ -31,6 +32,12 @@ interface UploadedMesh {
   indexBuffer: WebGLBuffer
   indexCount: number
   indexType: number
+}
+
+interface HelperLineMesh {
+  vao: WebGLVertexArrayObject
+  vertexBuffer: WebGLBuffer
+  vertexCount: number
 }
 
 interface RendererUniformLocations {
@@ -43,6 +50,42 @@ interface RendererUniformLocations {
   cameraPosition: WebGLUniformLocation | null
 }
 
+interface HelperProgramUniformLocations {
+  view: WebGLUniformLocation | null
+  projection: WebGLUniformLocation | null
+}
+
+const GRID_VERTEX_SHADER_SOURCE = `#version 300 es
+
+precision highp float;
+
+layout(location = 0) in vec3 aPosition;
+layout(location = 1) in vec4 aColor;
+
+uniform mat4 uView;
+uniform mat4 uProj;
+
+out vec4 vColor;
+
+void main() {
+  vColor = aColor;
+  gl_Position = uProj * uView * vec4(aPosition, 1.0);
+}
+`
+
+const GRID_FRAGMENT_SHADER_SOURCE = `#version 300 es
+
+precision highp float;
+
+in vec4 vColor;
+
+out vec4 outColor;
+
+void main() {
+  outColor = vColor;
+}
+`
+
 export interface RendererStateSnapshot {
   diagnostics: RenderDiagnostics
   viewportWidth: number
@@ -53,6 +96,7 @@ export interface RendererStateSnapshot {
   sceneMode: SceneMode
   geometryId: GeometryPreviewId
   blendMode: BlendMode
+  resolutionScale: ResolutionScale
 }
 
 export class WebGLQuadRenderer {
@@ -61,7 +105,8 @@ export class WebGLQuadRenderer {
   private program: WebGLProgram
   private readonly resizeObserver: ResizeObserver
   private animationFrameId: number | null = null
-  private startTime = 0
+  private elapsedSeconds = 0
+  private lastFrameTime = 0
   private viewportWidth = 0
   private viewportHeight = 0
   private diagnostics: RenderDiagnostics
@@ -74,13 +119,18 @@ export class WebGLQuadRenderer {
   private textureAssets = new Map<string, WebGLTexture>()
   private fallbackTexture: WebGLTexture | null = null
   private uniformLocations: RendererUniformLocations
+  private readonly helperProgram: WebGLProgram
+  private readonly helperUniformLocations: HelperProgramUniformLocations
   private screenMesh: UploadedMesh
   private geometryMeshes: Record<GeometryPreviewId, UploadedMesh>
+  private readonly gridMesh: HelperLineMesh
   private uploadedModelMesh: UploadedMesh | null = null
   private uploadedModelBounds: ModelBounds | null = null
   private sceneMode: SceneMode = 'screen'
   private geometryId: GeometryPreviewId = 'cube'
   private blendMode: BlendMode = 'opaque'
+  private resolutionScale: ResolutionScale = 1
+  private isViewportActive = true
   private cameraState: ViewportCameraState = {
     yaw: 0.6,
     pitch: 0.45,
@@ -114,6 +164,11 @@ export class WebGLQuadRenderer {
     this.program = program
     this.compileSucceeded = true
     this.uniformLocations = this.getRendererUniformLocations()
+    this.helperProgram = this.createHelperProgram()
+    this.helperUniformLocations = {
+      view: this.gl.getUniformLocation(this.helperProgram, 'uView'),
+      projection: this.gl.getUniformLocation(this.helperProgram, 'uProj'),
+    }
     this.fallbackTexture = this.createFallbackTexture()
     this.screenMesh = this.createMesh(createScreenQuadMesh())
     this.geometryMeshes = {
@@ -121,6 +176,7 @@ export class WebGLQuadRenderer {
       cube: this.createMesh(getPrimitiveMeshData('cube')),
       sphere: this.createMesh(getPrimitiveMeshData('sphere')),
     }
+    this.gridMesh = this.createHelperLineMesh(this.createWorldGridVertices())
     this.syncMaterialProperties()
 
     this.gl.enable(this.gl.DEPTH_TEST)
@@ -135,13 +191,16 @@ export class WebGLQuadRenderer {
   }
 
   start() {
-    if (this.animationFrameId !== null) {
+    if (this.animationFrameId !== null || !this.isViewportActive) {
       return
     }
 
-    this.startTime = performance.now()
+    this.lastFrameTime = performance.now()
     const frame = (now: number) => {
-      this.render((now - this.startTime) * 0.001)
+      const deltaSeconds = Math.min((now - this.lastFrameTime) * 0.001, 0.1)
+      this.lastFrameTime = now
+      this.elapsedSeconds += deltaSeconds
+      this.render(this.elapsedSeconds)
       this.animationFrameId = window.requestAnimationFrame(frame)
     }
 
@@ -166,6 +225,7 @@ export class WebGLQuadRenderer {
       sceneMode: this.sceneMode,
       geometryId: this.geometryId,
       blendMode: this.blendMode,
+      resolutionScale: this.resolutionScale,
     }
   }
 
@@ -205,8 +265,25 @@ export class WebGLQuadRenderer {
     this.blendMode = blendMode
   }
 
+  updateResolutionScale(resolutionScale: ResolutionScale) {
+    this.resolutionScale = resolutionScale
+    this.resize()
+    this.render(this.elapsedSeconds)
+  }
+
   updateCameraState(cameraState: ViewportCameraState) {
     this.cameraState = cameraState
+  }
+
+  setViewportActive(isActive: boolean) {
+    this.isViewportActive = isActive
+
+    if (isActive) {
+      this.start()
+      return
+    }
+
+    this.stop()
   }
 
   updateModelAsset(modelAsset: ModelAsset | null) {
@@ -225,6 +302,7 @@ export class WebGLQuadRenderer {
       indices: modelAsset.indices,
     })
     this.uploadedModelBounds = modelAsset.bounds
+    this.render(this.elapsedSeconds)
   }
 
   syncTextureAssets(assets: TextureAsset[]) {
@@ -280,9 +358,11 @@ export class WebGLQuadRenderer {
     Object.values(this.geometryMeshes).forEach((mesh) => {
       this.deleteMesh(mesh)
     })
+    this.deleteHelperLineMesh(this.gridMesh)
     if (this.uploadedModelMesh) {
       this.deleteMesh(this.uploadedModelMesh)
     }
+    this.gl.deleteProgram(this.helperProgram)
     this.gl.deleteProgram(this.program)
   }
 
@@ -290,16 +370,20 @@ export class WebGLQuadRenderer {
     const aspect = this.viewportWidth / Math.max(this.viewportHeight, 1)
     const frameState = this.uploadedModelBounds ? frameModelBounds(this.uploadedModelBounds) : null
     const cameraTarget = frameState?.center ?? [0, 0, 0]
+    const effectiveCameraDistance = Math.max(this.cameraState.distance, frameState?.distance ?? 2.2)
+    const clippingRadius = frameState?.radius ?? 1
     const cameraPosition = this.getCameraPosition(cameraTarget)
     const viewMatrix = createLookAtMatrix4(cameraPosition, cameraTarget, [0, 1, 0])
     const projectionMatrix = createPerspectiveMatrix4(
       Math.PI / 3,
       Math.max(aspect, 0.0001),
-      frameState?.near ?? 0.1,
-      frameState?.far ?? 100,
+      Math.max(effectiveCameraDistance - clippingRadius * 4, 0.05),
+      Math.max(effectiveCameraDistance + clippingRadius * 6, 100),
     )
     const modelMatrix =
-      this.sceneMode === 'model' ? createYRotationMatrix4(elapsedSeconds * 0.35) : createIdentityMatrix4()
+      this.sceneMode === 'model' && this.uploadedModelMesh
+        ? createTranslationMatrix4(0, 1, 0)
+        : createIdentityMatrix4()
 
     this.gl.clearColor(0.02, 0.04, 0.08, 1)
     this.gl.clear(this.gl.COLOR_BUFFER_BIT | this.gl.DEPTH_BUFFER_BIT)
@@ -350,16 +434,24 @@ export class WebGLQuadRenderer {
 
     this.applyMaterialUniforms()
 
-    if (this.sceneMode === 'model' && this.uploadedModelMesh) {
-      this.gl.disable(this.gl.CULL_FACE)
-      this.drawMesh(this.uploadedModelMesh)
-      this.gl.bindVertexArray(null)
-      return
-    }
-
     if (this.sceneMode !== 'screen') {
       this.gl.enable(this.gl.CULL_FACE)
       this.gl.cullFace(this.gl.BACK)
+    }
+
+    if (this.sceneMode === 'model') {
+      this.drawWorldGrid(viewMatrix, projectionMatrix)
+      this.applyBlendMode()
+      this.gl.enable(this.gl.DEPTH_TEST)
+      this.gl.enable(this.gl.CULL_FACE)
+      this.gl.cullFace(this.gl.BACK)
+    }
+
+    if (this.sceneMode === 'model' && this.uploadedModelMesh) {
+      this.gl.useProgram(this.program)
+      this.drawMesh(this.uploadedModelMesh)
+      this.gl.bindVertexArray(null)
+      return
     }
 
     const mesh = this.sceneMode === 'screen' ? this.screenMesh : this.geometryMeshes[this.geometryId]
@@ -369,8 +461,9 @@ export class WebGLQuadRenderer {
 
   private resize() {
     const dpr = window.devicePixelRatio || 1
-    const nextWidth = Math.max(1, Math.floor(this.canvas.clientWidth * dpr))
-    const nextHeight = Math.max(1, Math.floor(this.canvas.clientHeight * dpr))
+    const scaledDpr = Math.max(0.25, dpr * this.resolutionScale)
+    const nextWidth = Math.max(1, Math.floor(this.canvas.clientWidth * scaledDpr))
+    const nextHeight = Math.max(1, Math.floor(this.canvas.clientHeight * scaledDpr))
 
     if (this.canvas.width !== nextWidth || this.canvas.height !== nextHeight) {
       this.canvas.width = nextWidth
@@ -583,6 +676,168 @@ export class WebGLQuadRenderer {
   private drawMesh(mesh: UploadedMesh) {
     this.gl.bindVertexArray(mesh.vao)
     this.gl.drawElements(this.gl.TRIANGLES, mesh.indexCount, mesh.indexType, 0)
+  }
+
+  private createHelperProgram() {
+    const vertexShader = this.gl.createShader(this.gl.VERTEX_SHADER)
+    const fragmentShader = this.gl.createShader(this.gl.FRAGMENT_SHADER)
+
+    if (!vertexShader || !fragmentShader) {
+      throw new Error('helper shader를 초기화하지 못했습니다.')
+    }
+
+    this.gl.shaderSource(vertexShader, GRID_VERTEX_SHADER_SOURCE)
+    this.gl.compileShader(vertexShader)
+    if (!this.gl.getShaderParameter(vertexShader, this.gl.COMPILE_STATUS)) {
+      const log = this.gl.getShaderInfoLog(vertexShader) ?? 'helper vertex shader compile failed'
+      this.gl.deleteShader(vertexShader)
+      this.gl.deleteShader(fragmentShader)
+      throw new Error(log)
+    }
+
+    this.gl.shaderSource(fragmentShader, GRID_FRAGMENT_SHADER_SOURCE)
+    this.gl.compileShader(fragmentShader)
+    if (!this.gl.getShaderParameter(fragmentShader, this.gl.COMPILE_STATUS)) {
+      const log = this.gl.getShaderInfoLog(fragmentShader) ?? 'helper fragment shader compile failed'
+      this.gl.deleteShader(vertexShader)
+      this.gl.deleteShader(fragmentShader)
+      throw new Error(log)
+    }
+
+    const program = this.gl.createProgram()
+    if (!program) {
+      this.gl.deleteShader(vertexShader)
+      this.gl.deleteShader(fragmentShader)
+      throw new Error('helper program을 생성하지 못했습니다.')
+    }
+
+    this.gl.attachShader(program, vertexShader)
+    this.gl.attachShader(program, fragmentShader)
+    this.gl.linkProgram(program)
+    this.gl.deleteShader(vertexShader)
+    this.gl.deleteShader(fragmentShader)
+
+    if (!this.gl.getProgramParameter(program, this.gl.LINK_STATUS)) {
+      const log = this.gl.getProgramInfoLog(program) ?? 'helper program link failed'
+      this.gl.deleteProgram(program)
+      throw new Error(log)
+    }
+
+    return program
+  }
+
+  private createHelperLineMesh(vertices: Float32Array): HelperLineMesh {
+    const vao = this.gl.createVertexArray()
+    const vertexBuffer = this.gl.createBuffer()
+
+    if (!vao || !vertexBuffer) {
+      throw new Error('grid helper buffer를 초기화하지 못했습니다.')
+    }
+
+    const stride = 7 * Float32Array.BYTES_PER_ELEMENT
+
+    this.gl.bindVertexArray(vao)
+    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, vertexBuffer)
+    this.gl.bufferData(this.gl.ARRAY_BUFFER, vertices, this.gl.STATIC_DRAW)
+
+    this.gl.enableVertexAttribArray(0)
+    this.gl.vertexAttribPointer(0, 3, this.gl.FLOAT, false, stride, 0)
+    this.gl.enableVertexAttribArray(1)
+    this.gl.vertexAttribPointer(
+      1,
+      4,
+      this.gl.FLOAT,
+      false,
+      stride,
+      3 * Float32Array.BYTES_PER_ELEMENT,
+    )
+
+    this.gl.bindVertexArray(null)
+    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, null)
+
+    return {
+      vao,
+      vertexBuffer,
+      vertexCount: vertices.length / 7,
+    }
+  }
+
+  private deleteHelperLineMesh(mesh: HelperLineMesh) {
+    this.gl.deleteBuffer(mesh.vertexBuffer)
+    this.gl.deleteVertexArray(mesh.vao)
+  }
+
+  private createWorldGridVertices() {
+    const values: number[] = []
+    const extent = 5
+    const steps = 10
+
+    const pushLine = (
+      start: [number, number, number],
+      end: [number, number, number],
+      color: [number, number, number, number],
+    ) => {
+      values.push(
+        start[0],
+        start[1],
+        start[2],
+        color[0],
+        color[1],
+        color[2],
+        color[3],
+        end[0],
+        end[1],
+        end[2],
+        color[0],
+        color[1],
+        color[2],
+        color[3],
+      )
+    }
+
+    for (let step = -steps; step <= steps; step += 1) {
+      const offset = (step / steps) * extent
+      const isMajor = step === 0
+      const lineColor: [number, number, number, number] = isMajor
+        ? [0.55, 0.72, 0.98, 0.85]
+        : [0.42, 0.48, 0.58, 0.35]
+
+      pushLine([-extent, 0, offset], [extent, 0, offset], lineColor)
+      pushLine([offset, 0, -extent], [offset, 0, extent], lineColor)
+    }
+
+    pushLine([-extent, 0, 0], [extent, 0, 0], [0.96, 0.45, 0.45, 0.95])
+    pushLine([0, 0, -extent], [0, 0, extent], [0.35, 0.65, 1.0, 0.95])
+
+    return new Float32Array(values)
+  }
+
+  private drawWorldGrid(viewMatrix: Float32Array, projectionMatrix: Float32Array) {
+    this.gl.useProgram(this.helperProgram)
+
+    if (this.helperUniformLocations.view) {
+      this.gl.uniformMatrix4fv(this.helperUniformLocations.view, false, viewMatrix)
+    }
+
+    if (this.helperUniformLocations.projection) {
+      this.gl.uniformMatrix4fv(this.helperUniformLocations.projection, false, projectionMatrix)
+    }
+
+    this.gl.enable(this.gl.BLEND)
+    this.gl.blendEquation(this.gl.FUNC_ADD)
+    this.gl.blendFuncSeparate(
+      this.gl.SRC_ALPHA,
+      this.gl.ONE_MINUS_SRC_ALPHA,
+      this.gl.ONE,
+      this.gl.ONE_MINUS_SRC_ALPHA,
+    )
+    this.gl.depthMask(true)
+    this.gl.disable(this.gl.CULL_FACE)
+    this.gl.bindVertexArray(this.gridMesh.vao)
+    this.gl.drawArrays(this.gl.LINES, 0, this.gridMesh.vertexCount)
+    this.gl.bindVertexArray(null)
+    this.gl.depthMask(true)
+    this.gl.useProgram(this.program)
   }
 
   private createFallbackTexture() {

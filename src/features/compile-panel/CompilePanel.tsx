@@ -28,11 +28,7 @@ export function CompilePanel({
   return (
     <section className="compile-panel">
       <div className="compile-panel__header">
-        <div>
-          <p className="panel__eyebrow">Compile</p>
-          <h2>컴파일 제어</h2>
-        </div>
-
+        <p className="panel__eyebrow">Compile</p>
         <button className="compile-panel__button" type="button" onClick={onCompile} disabled={isCompiling}>
           {isCompiling ? '컴파일 중...' : 'Compile'}
         </button>

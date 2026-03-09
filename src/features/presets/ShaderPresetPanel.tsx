@@ -30,22 +30,22 @@ export function ShaderPresetPanel({
   }, [activePresetId])
 
   const selectedPreset =
-    presets.find((preset) => preset.id === selectedPresetId) ?? presets.find((preset) => preset.id === activePresetId)
+    presets.find((preset) => preset.id === selectedPresetId) ??
+    presets.find((preset) => preset.id === activePresetId)
 
   return (
-    <section className="preset-panel">
-      <div className="preset-panel__header">
-        <div>
-          <p className="panel__eyebrow">Preset</p>
-          <h2>예제 셰이더</h2>
-        </div>
-        <span className="status-chip status-chip--ready">{presets.length}개</span>
+    <section className="preset-panel preset-panel--compact">
+      <div className="preset-panel__compact-header">
+        <p className="panel__eyebrow">Preset</p>
+        <span className="preset-panel__count">{presets.length}</span>
       </div>
 
-      <div className="preset-panel__body">
-        <label className="preset-panel__select">
-          <span>프리셋 선택</span>
+      <div className="preset-panel__compact-controls">
+        <label className="preset-panel__select" htmlFor="shader-preset-select">
+          <span className="sr-only">프리셋 선택</span>
           <select
+            id="shader-preset-select"
+            title={selectedPreset?.description ?? '선택한 프리셋 설명'}
             value={selectedPresetId}
             onChange={(event) => {
               setSelectedPresetId(event.target.value)
@@ -59,10 +59,9 @@ export function ShaderPresetPanel({
           </select>
         </label>
 
-        <p className="preset-panel__description">{selectedPreset?.description}</p>
-
         <button
-          className="compile-panel__button"
+          className="compile-panel__button preset-panel__apply"
+          title={selectedPreset?.description ?? '선택한 프리셋 적용'}
           type="button"
           disabled={!selectedPreset}
           onClick={() => {
@@ -71,8 +70,16 @@ export function ShaderPresetPanel({
             }
           }}
         >
-          프리셋 적용
+          적용
         </button>
+
+        <span
+          aria-label={selectedPreset?.description ?? '선택한 프리셋 설명'}
+          className="preset-panel__info"
+          title={selectedPreset?.description ?? '선택한 프리셋 설명'}
+        >
+          ?
+        </span>
       </div>
     </section>
   )

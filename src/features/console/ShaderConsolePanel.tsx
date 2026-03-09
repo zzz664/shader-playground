@@ -18,10 +18,7 @@ export function ShaderConsolePanel({ diagnostics, lines, onSelectLine }: ShaderC
   return (
     <section className="console-panel">
       <div className="console-panel__header">
-        <div>
-          <p className="panel__eyebrow">Console</p>
-          <h2>셰이더 콘솔</h2>
-        </div>
+        <p className="panel__eyebrow">Console</p>
         <span className={`status-chip ${lines.length > 0 ? 'status-chip--error' : 'status-chip--ready'}`}>
           {lines.length > 0 ? `진단 ${lines.length}건` : '오류 없음'}
         </span>

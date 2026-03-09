@@ -1,7 +1,6 @@
 import './App.css'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { frameModelBounds } from './core/model/framing/frameModelBounds'
-import { loadFbxAsset } from './core/model/loader/loadFbxAsset'
 import type { RendererStateSnapshot } from './core/renderer/WebGLQuadRenderer'
 import {
   defaultFragmentShaderSource,
@@ -26,6 +25,7 @@ import type { RenderDiagnostics } from './shared/types/renderDiagnostics'
 import type {
   BlendMode,
   GeometryPreviewId,
+  ResolutionScale,
   SceneMode,
   ViewportCameraState,
 } from './shared/types/scenePreview'
@@ -126,6 +126,7 @@ function App() {
   const [sceneMode, setSceneMode] = useState<SceneMode>('screen')
   const [geometryId, setGeometryId] = useState<GeometryPreviewId>('cube')
   const [blendMode, setBlendMode] = useState<BlendMode>('opaque')
+  const [resolutionScale, setResolutionScale] = useState<ResolutionScale>(1)
   const [cameraState, setCameraState] = useState<ViewportCameraState>({
     yaw: 0.6,
     pitch: 0.45,
@@ -137,6 +138,7 @@ function App() {
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null)
   const [isProjectDirty, setIsProjectDirty] = useState(false)
   const [focusedDiagnostic, setFocusedDiagnostic] = useState<DiagnosticFocusTarget | null>(null)
+  const [activeEditorStage, setActiveEditorStage] = useState<'vertex' | 'fragment'>('fragment')
   const hasMountedRef = useRef(false)
   const textureAssetsRef = useRef<TextureAsset[]>([])
   const restoreInProgressRef = useRef(false)
@@ -179,6 +181,7 @@ function App() {
       sceneMode,
       geometryId,
       blendMode,
+      resolutionScale,
       cameraState,
       materialValues,
       textureAssets: textureAssets.map(serializeTextureAsset),
@@ -191,6 +194,7 @@ function App() {
       geometryId,
       materialValues,
       modelAsset,
+      resolutionScale,
       sceneMode,
       textureAssets,
       vertexSource,
@@ -216,13 +220,14 @@ function App() {
       setSceneMode(snapshot.sceneMode)
       setGeometryId(snapshot.geometryId)
       setBlendMode(snapshot.blendMode)
+      setResolutionScale(snapshot.resolutionScale ?? 1)
       setCameraState(snapshot.cameraState)
       setMaterialValues(snapshot.materialValues)
       setModelAsset(restoredModelAsset)
       setTextureLoadError(null)
       setModelLoadError(null)
       setLastSavedAt(formatSavedAt(snapshot.savedAt))
-      setProjectStatusMessage(`${sourceLabel} 불러오기를 완료했습니다.`)
+      setProjectStatusMessage(`${sourceLabel} 遺덈윭?ㅺ린瑜??꾨즺?덉뒿?덈떎.`)
       projectSignatureRef.current = buildProjectSignature(snapshot)
       setIsProjectDirty(false)
       setIsCompiling(true)
@@ -239,7 +244,7 @@ function App() {
     void (async () => {
       const storedSnapshot = loadStoredProjectSnapshot()
       if (storedSnapshot) {
-        await applyProjectSnapshot(storedSnapshot, '로컬 프로젝트')
+        await applyProjectSnapshot(storedSnapshot, '濡쒖뺄 ?꾨줈?앺듃')
       }
 
       hasMountedRef.current = true
@@ -274,11 +279,11 @@ function App() {
         saveProjectSnapshot(snapshot)
         projectSignatureRef.current = buildProjectSignature(snapshot)
         setLastSavedAt(formatSavedAt(snapshot.savedAt))
-        setProjectStatusMessage('최근 작업을 자동 저장했습니다.')
+        setProjectStatusMessage('理쒓렐 ?묒뾽???먮룞 ??ν뻽?듬땲??')
         setIsProjectDirty(false)
       } catch (error) {
         const message =
-          error instanceof Error ? error.message : '자동 저장 중 오류가 발생했습니다.'
+          error instanceof Error ? error.message : '?먮룞 ???以??ㅻ쪟媛 諛쒖깮?덉뒿?덈떎.'
         setProjectStatusMessage(message)
       }
     }, 500)
@@ -286,9 +291,7 @@ function App() {
     return () => {
       window.clearTimeout(timeoutId)
     }
-  }, [
-    projectSnapshot,
-  ])
+  }, [projectSnapshot])
 
   useEffect(() => {
     if (!hasMountedRef.current || restoreInProgressRef.current) {
@@ -312,6 +315,10 @@ function App() {
   }, [])
 
   const handleVertexSourceChange = (nextValue: string) => {
+    if (nextValue === vertexSource) {
+      return
+    }
+
     setVertexSource(nextValue)
 
     if (autoCompile && hasMountedRef.current) {
@@ -320,6 +327,10 @@ function App() {
   }
 
   const handleFragmentSourceChange = (nextValue: string) => {
+    if (nextValue === fragmentSource) {
+      return
+    }
+
     setFragmentSource(nextValue)
 
     if (autoCompile && hasMountedRef.current) {
@@ -372,7 +383,7 @@ function App() {
         [propertyName]: asset.id,
       }))
     } catch (error) {
-      const message = error instanceof Error ? error.message : '텍스처를 불러오지 못했습니다.'
+      const message = error instanceof Error ? error.message : '?띿뒪泥섎? 遺덈윭?ㅼ? 紐삵뻽?듬땲??'
       setTextureLoadError(message)
     }
   }
@@ -428,6 +439,7 @@ function App() {
         clearCurrentModel()
       }
 
+      const { loadFbxAsset } = await import('./core/model/loader/loadFbxAsset')
       const nextModelAsset = await loadFbxAsset(files)
       const frameState = frameModelBounds(nextModelAsset.bounds)
       const taggedTextureAssets = nextModelAsset.textureAssets.map((asset) => ({
@@ -454,14 +466,14 @@ function App() {
         buildAutoTextureBindings(currentValues, materialProperties, nextTaggedModelAsset),
       )
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'FBX 모델을 불러오지 못했습니다.'
+      const message = error instanceof Error ? error.message : 'FBX 紐⑤뜽??遺덈윭?ㅼ? 紐삵뻽?듬땲??'
       setModelLoadError(message)
     }
   }
 
   const handleDeleteTexture = (assetId: string) => {
     removeTextureAssetsByIds(new Set([assetId]))
-    setProjectStatusMessage('텍스처 자산을 삭제하고 참조를 정리했습니다.')
+    setProjectStatusMessage('?띿뒪泥??먯궛????젣?섍퀬 李몄“瑜??뺣━?덉뒿?덈떎.')
   }
 
   const handleSaveProject = () => {
@@ -470,11 +482,11 @@ function App() {
       saveProjectSnapshot(snapshot)
       projectSignatureRef.current = buildProjectSignature(snapshot)
       setLastSavedAt(formatSavedAt(snapshot.savedAt))
-      setProjectStatusMessage('프로젝트를 로컬 저장소에 저장했습니다.')
+      setProjectStatusMessage('?꾨줈?앺듃瑜?濡쒖뺄 ??μ냼????ν뻽?듬땲??')
       setIsProjectDirty(false)
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : '프로젝트 저장 중 오류가 발생했습니다.'
+        error instanceof Error ? error.message : '?꾨줈?앺듃 ???以??ㅻ쪟媛 諛쒖깮?덉뒿?덈떎.'
       setProjectStatusMessage(message)
     }
   }
@@ -482,11 +494,11 @@ function App() {
   const handleLoadProject = async () => {
     const snapshot = loadStoredProjectSnapshot()
     if (!snapshot) {
-      setProjectStatusMessage('저장된 로컬 프로젝트가 없습니다.')
+      setProjectStatusMessage('??λ맂 濡쒖뺄 ?꾨줈?앺듃媛 ?놁뒿?덈떎.')
       return
     }
 
-    await applyProjectSnapshot(snapshot, '로컬 프로젝트')
+    await applyProjectSnapshot(snapshot, '濡쒖뺄 ?꾨줈?앺듃')
   }
 
   const handleExportProject = () => {
@@ -498,22 +510,22 @@ function App() {
     link.download = `shader-playground-${Date.now()}.json`
     link.click()
     URL.revokeObjectURL(url)
-    setProjectStatusMessage('프로젝트 JSON 내보내기를 완료했습니다.')
+    setProjectStatusMessage('?꾨줈?앺듃 JSON ?대낫?닿린瑜??꾨즺?덉뒿?덈떎.')
   }
 
   const handleImportProject = async (file: File) => {
     try {
       const parsedSnapshot = JSON.parse(await file.text()) as ProjectSnapshot
-      await applyProjectSnapshot(parsedSnapshot, 'JSON 프로젝트')
+      await applyProjectSnapshot(parsedSnapshot, 'JSON ?꾨줈?앺듃')
     } catch (error) {
-      const message = error instanceof Error ? error.message : '프로젝트 파일을 불러오지 못했습니다.'
+      const message = error instanceof Error ? error.message : '?꾨줈?앺듃 ?뚯씪??遺덈윭?ㅼ? 紐삵뻽?듬땲??'
       setProjectStatusMessage(message)
     }
   }
 
   const handleClearStoredProject = () => {
     clearStoredProjectSnapshot()
-    setProjectStatusMessage('로컬 저장본을 삭제했습니다.')
+    setProjectStatusMessage('濡쒖뺄 ??λ낯????젣?덉뒿?덈떎.')
     projectSignatureRef.current = ''
     setIsProjectDirty(true)
     setLastSavedAt(null)
@@ -530,6 +542,7 @@ function App() {
       column: line.column,
       token: Date.now(),
     })
+    setActiveEditorStage(line.stage)
   }
 
   const handleApplyPreset = (preset: ShaderPreset) => {
@@ -545,101 +558,31 @@ function App() {
 
   return (
     <main className="app-shell">
-      <section className="hero-panel">
-        <p className="panel__eyebrow">Sprint 8</p>
-        <h1>프로젝트 저장과 에셋 관리를 포함한 셰이더 플레이그라운드</h1>
-        <p className="hero-panel__description">
-          이번 단계에서는 현재 작업 상태를 저장하고 다시 불러올 수 있게 만들고, 업로드한
-          텍스처와 모델을 한 곳에서 확인하고 정리할 수 있는 asset browser를 추가합니다.
-        </p>
+      <section className="topbar-grid">
+        <ProjectPanel
+          isDirty={isProjectDirty}
+          lastSavedAt={lastSavedAt}
+          projectStatusMessage={projectStatusMessage}
+          onSave={handleSaveProject}
+          onLoad={handleLoadProject}
+          onExport={handleExportProject}
+          onImport={handleImportProject}
+          onClearStored={handleClearStoredProject}
+        />
 
-        <div className="hero-panel__grid">
-          <article className="info-card">
-            <h2>이번 작업 항목</h2>
-            <ul>
-              <li>project save / load</li>
-              <li>asset browser</li>
-              <li>cleanup / stability 작업</li>
-            </ul>
-          </article>
-
-          <article className="info-card">
-            <h2>주의점</h2>
-            <ul>
-              <li>최근 작업 저장은 localStorage 기반으로 구현합니다.</li>
-              <li>자산 삭제 시 연결된 shader 참조와 모델 텍스처 참조를 함께 정리합니다.</li>
-              <li>IndexedDB 기반 대용량 저장은 이번 범위에 포함하지 않습니다.</li>
-            </ul>
-          </article>
-        </div>
+        <CompilePanel
+          autoCompile={autoCompile}
+          errorCount={parsedLines.length}
+          isCompiling={isCompiling}
+          lastCompileMode={lastCompileMode}
+          lastCompileSucceeded={lastCompileSucceeded}
+          onCompile={handleCompileClick}
+          onToggleAutoCompile={setAutoCompile}
+        />
       </section>
 
-      <section className="workspace">
-        <div className="workspace-main">
-          <div className="editor-grid">
-            <ShaderEditorPanel
-              title="Vertex Shader"
-              stage="vertex"
-              value={vertexSource}
-              diagnostics={vertexDiagnosticLines}
-              focusTarget={focusedDiagnostic}
-              onChange={handleVertexSourceChange}
-            />
-            <ShaderEditorPanel
-              title="Fragment Shader"
-              stage="fragment"
-              value={fragmentSource}
-              diagnostics={fragmentDiagnosticLines}
-              focusTarget={focusedDiagnostic}
-              onChange={handleFragmentSourceChange}
-            />
-          </div>
-
-          <ShaderPresetPanel
-            presets={shaderPresets}
-            activeVertexSource={vertexSource}
-            activeFragmentSource={fragmentSource}
-            onApplyPreset={handleApplyPreset}
-          />
-
-          <CompilePanel
-            autoCompile={autoCompile}
-            errorCount={parsedLines.length}
-            isCompiling={isCompiling}
-            lastCompileMode={lastCompileMode}
-            lastCompileSucceeded={lastCompileSucceeded}
-            onCompile={handleCompileClick}
-            onToggleAutoCompile={setAutoCompile}
-          />
-
-          <ShaderConsolePanel
-            diagnostics={diagnostics}
-            lines={parsedLines}
-            onSelectLine={handleSelectDiagnostic}
-          />
-
-          <MaterialInspectorPanel
-            properties={materialProperties}
-            values={materialValues}
-            textureAssets={textureAssets}
-            textureLoadError={textureLoadError}
-            onValueChange={handleMaterialValueChange}
-            onTextureUpload={handleTextureUpload}
-          />
-
-          <ProjectPanel
-            isDirty={isProjectDirty}
-            lastSavedAt={lastSavedAt}
-            projectStatusMessage={projectStatusMessage}
-            onSave={handleSaveProject}
-            onLoad={handleLoadProject}
-            onExport={handleExportProject}
-            onImport={handleImportProject}
-            onClearStored={handleClearStoredProject}
-          />
-        </div>
-
-        <aside className="workspace-sidebar">
+      <section className="workspace workspace--three-column">
+        <aside className="workspace-column workspace-column--viewport">
           <ViewportPanel
             vertexSource={vertexSource}
             fragmentSource={fragmentSource}
@@ -648,6 +591,7 @@ function App() {
             sceneMode={sceneMode}
             geometryId={geometryId}
             blendMode={blendMode}
+            resolutionScale={resolutionScale}
             cameraState={cameraState}
             modelAsset={modelAsset}
             modelLoadError={modelLoadError}
@@ -655,10 +599,50 @@ function App() {
             onSceneModeChange={setSceneMode}
             onGeometryChange={setGeometryId}
             onBlendModeChange={setBlendMode}
+            onResolutionScaleChange={setResolutionScale}
             onCameraChange={setCameraState}
             onModelUpload={handleModelUpload}
             onModelClear={clearCurrentModel}
             onCompileResult={handleCompileResult}
+          />
+        </aside>
+
+        <div className="workspace-column workspace-column--editor">
+          <ShaderEditorPanel
+            activeStage={activeEditorStage}
+            vertexSource={vertexSource}
+            fragmentSource={fragmentSource}
+            vertexDiagnostics={vertexDiagnosticLines}
+            fragmentDiagnostics={fragmentDiagnosticLines}
+            focusTarget={focusedDiagnostic}
+            presetSlot={
+              <ShaderPresetPanel
+                presets={shaderPresets}
+                activeVertexSource={vertexSource}
+                activeFragmentSource={fragmentSource}
+                onApplyPreset={handleApplyPreset}
+              />
+            }
+            onStageChange={setActiveEditorStage}
+            onVertexChange={handleVertexSourceChange}
+            onFragmentChange={handleFragmentSourceChange}
+          />
+
+          <ShaderConsolePanel
+            diagnostics={diagnostics}
+            lines={parsedLines}
+            onSelectLine={handleSelectDiagnostic}
+          />
+        </div>
+
+        <aside className="workspace-column workspace-column--inspector">
+          <MaterialInspectorPanel
+            properties={materialProperties}
+            values={materialValues}
+            textureAssets={textureAssets}
+            textureLoadError={textureLoadError}
+            onValueChange={handleMaterialValueChange}
+            onTextureUpload={handleTextureUpload}
           />
 
           <AssetBrowserPanel

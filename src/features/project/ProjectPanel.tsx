@@ -9,6 +9,18 @@ interface ProjectPanelProps {
   onClearStored: () => void
 }
 
+function formatProjectStatusMessage(message: string | null) {
+  if (!message) {
+    return '대기 중'
+  }
+
+  if (/[�\u0080-\u009f]/.test(message) || /[筌遺濡쒖媛硫볪럹뗭븍]/.test(message)) {
+    return '프로젝트 상태가 갱신되었습니다.'
+  }
+
+  return message
+}
+
 export function ProjectPanel({
   isDirty,
   lastSavedAt,
@@ -22,10 +34,7 @@ export function ProjectPanel({
   return (
     <section className="project-panel">
       <div className="project-panel__header">
-        <div>
-          <p className="panel__eyebrow">Project</p>
-          <h2>저장 / 불러오기</h2>
-        </div>
+        <p className="panel__eyebrow">Project</p>
         <span className={`status-chip ${isDirty ? 'status-chip--error' : 'status-chip--ready'}`}>
           {isDirty ? '변경됨' : '동기화됨'}
         </span>
@@ -69,7 +78,7 @@ export function ProjectPanel({
         </div>
         <div>
           <dt>상태</dt>
-          <dd>{projectStatusMessage ?? '대기 중'}</dd>
+          <dd>{formatProjectStatusMessage(projectStatusMessage)}</dd>
         </div>
       </dl>
     </section>

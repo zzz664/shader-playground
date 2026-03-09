@@ -1,4 +1,4 @@
-import { Suspense, lazy } from 'react'
+import { Suspense, lazy, type ReactNode } from 'react'
 import type { ParsedDiagnosticLine } from '../../shared/types/renderDiagnostics'
 
 const CodeMirrorShaderEditor = lazy(async () => await import('./CodeMirrorShaderEditor'))
@@ -17,6 +17,7 @@ interface ShaderEditorPanelProps {
   vertexDiagnostics: ParsedDiagnosticLine[]
   fragmentDiagnostics: ParsedDiagnosticLine[]
   focusTarget: DiagnosticFocusTarget | null
+  presetSlot?: ReactNode
   onStageChange: (stage: 'vertex' | 'fragment') => void
   onVertexChange: (nextValue: string) => void
   onFragmentChange: (nextValue: string) => void
@@ -28,10 +29,7 @@ export function ShaderEditorPanel(props: ShaderEditorPanelProps) {
       fallback={
         <section className="editor-panel">
           <div className="editor-panel__header">
-            <div>
-              <p className="panel__eyebrow">Editor</p>
-              <h2>Shader Editor</h2>
-            </div>
+            <p className="panel__eyebrow">Editor</p>
             <span className="editor-panel__stage">loading</span>
           </div>
 

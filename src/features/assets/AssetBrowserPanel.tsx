@@ -19,11 +19,7 @@ export function AssetBrowserPanel({
   return (
     <section className="asset-browser-panel">
       <div className="asset-browser-panel__header">
-        <div>
-          <p className="panel__eyebrow">Assets</p>
-          <h2>Asset Browser</h2>
-        </div>
-        <span className="status-chip status-chip--ready">{textureAssets.length + (modelAsset ? 1 : 0)}개</span>
+        <p className="panel__eyebrow">Assets</p>
       </div>
 
       <div className="asset-browser-panel__section">
