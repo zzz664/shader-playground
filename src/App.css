@@ -268,6 +268,16 @@
   color: #e2e8f0;
 }
 
+.property-card select {
+  width: 100%;
+  min-height: 2.5rem;
+  padding: 0 0.8rem;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 0.8rem;
+  background: rgba(15, 23, 42, 0.9);
+  color: #e2e8f0;
+}
+
 .property-card--checkbox {
   grid-template-columns: 1fr auto;
   align-items: center;
@@ -282,6 +292,57 @@
 .inspector-panel__empty {
   margin: 1rem 0 0;
   color: #cbd5e1;
+}
+
+.texture-slot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.5rem;
+  padding: 0 1rem;
+  border-radius: 0.8rem;
+  background: rgba(245, 158, 11, 0.15);
+  color: #fcd34d;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.texture-slot input {
+  display: none;
+}
+
+.texture-preview {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.75rem;
+  border-radius: 0.9rem;
+  background: rgba(15, 23, 42, 0.7);
+}
+
+.texture-preview img {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 0.75rem;
+}
+
+.texture-preview p {
+  margin: 0;
+  color: #cbd5e1;
+  font-size: 0.8rem;
+}
+
+.texture-preview__empty,
+.texture-preview__error {
+  margin: 0;
+  color: #cbd5e1;
+  font-size: 0.85rem;
+}
+
+.texture-preview__error {
+  color: #fca5a5;
 }
 
 .viewport-panel {

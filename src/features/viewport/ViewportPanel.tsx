@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { WebGLQuadRenderer, type RendererStateSnapshot } from '../../core/renderer/WebGLQuadRenderer'
 import type { MaterialPropertyValue } from '../../shared/types/materialProperty'
+import type { TextureAsset } from '../../shared/types/textureAsset'
 
 interface ViewportPanelState {
   ready: boolean
@@ -12,6 +13,7 @@ interface ViewportPanelProps {
   vertexSource: string
   fragmentSource: string
   materialValues: Record<string, MaterialPropertyValue>
+  textureAssets: TextureAsset[]
   compileRequest: {
     token: number
     mode: 'auto' | 'manual'
@@ -23,6 +25,7 @@ export function ViewportPanel({
   vertexSource,
   fragmentSource,
   materialValues,
+  textureAssets,
   compileRequest,
   onCompileResult,
 }: ViewportPanelProps) {
@@ -105,6 +108,10 @@ export function ViewportPanel({
   useEffect(() => {
     rendererRef.current?.updateMaterialValues(materialValues)
   }, [materialValues])
+
+  useEffect(() => {
+    rendererRef.current?.syncTextureAssets(textureAssets)
+  }, [textureAssets])
 
   return (
     <section className="viewport-panel">

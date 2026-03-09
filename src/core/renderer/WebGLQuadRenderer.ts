@@ -14,6 +14,7 @@ import type {
   MaterialPropertyDefinition,
   MaterialPropertyValue,
 } from '../../shared/types/materialProperty'
+import type { TextureAsset } from '../../shared/types/textureAsset'
 
 export interface RendererStateSnapshot {
   diagnostics: RenderDiagnostics
@@ -42,6 +43,9 @@ export class WebGLQuadRenderer {
   private materialProperties: MaterialPropertyDefinition[] = []
   private materialValues: Record<string, MaterialPropertyValue> = {}
   private materialUniformLocations = new Map<string, WebGLUniformLocation>()
+  private textureAssets = new Map<string, WebGLTexture>()
+  private textureBindings = new Map<string, string>()
+  private fallbackTexture: WebGLTexture | null = null
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -79,6 +83,7 @@ export class WebGLQuadRenderer {
     this.positionBuffer = positionBuffer
     this.timeLocation = this.gl.getUniformLocation(this.program, 'uTime')
     this.resolutionLocation = this.gl.getUniformLocation(this.program, 'uResolution')
+    this.fallbackTexture = this.createFallbackTexture()
     this.syncMaterialProperties()
 
     this.configureQuad()
@@ -198,6 +203,46 @@ export class WebGLQuadRenderer {
     this.materialValues = nextValues
   }
 
+  syncTextureAssets(assets: TextureAsset[]) {
+    const nextAssetIds = new Set(assets.map((asset) => asset.id))
+
+    this.textureAssets.forEach((texture, assetId) => {
+      if (!nextAssetIds.has(assetId)) {
+        this.gl.deleteTexture(texture)
+        this.textureAssets.delete(assetId)
+      }
+    })
+
+    assets.forEach((asset) => {
+      const existing = this.textureAssets.get(asset.id)
+      if (existing) {
+        return
+      }
+
+      const texture = this.gl.createTexture()
+      if (!texture) {
+        return
+      }
+
+      this.gl.bindTexture(this.gl.TEXTURE_2D, texture)
+      this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MIN_FILTER, this.gl.LINEAR)
+      this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MAG_FILTER, this.gl.LINEAR)
+      this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_S, this.gl.REPEAT)
+      this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_T, this.gl.REPEAT)
+      this.gl.pixelStorei(this.gl.UNPACK_FLIP_Y_WEBGL, 1)
+      this.gl.texImage2D(
+        this.gl.TEXTURE_2D,
+        0,
+        this.gl.RGBA,
+        this.gl.RGBA,
+        this.gl.UNSIGNED_BYTE,
+        asset.bitmap,
+      )
+      this.gl.bindTexture(this.gl.TEXTURE_2D, null)
+      this.textureAssets.set(asset.id, texture)
+    })
+  }
+
   private syncMaterialProperties() {
     const reflectedProperties = reflectActiveUniforms(this.gl, this.program).filter((property) => !property.builtin)
     const nextUniformLocations = new Map<string, WebGLUniformLocation>()
@@ -205,7 +250,7 @@ export class WebGLQuadRenderer {
 
     reflectedProperties.forEach((property) => {
       const location = this.gl.getUniformLocation(this.program, property.name)
-      if (location) {
+      if (location !== null) {
         nextUniformLocations.set(property.name, location)
       }
 
@@ -221,15 +266,34 @@ export class WebGLQuadRenderer {
   }
 
   private applyMaterialUniforms() {
+    this.textureBindings.clear()
+    let textureUnit = 0
+
     this.materialProperties.forEach((property) => {
       const location = this.materialUniformLocations.get(property.name)
       const value = this.materialValues[property.name]
 
-      if (!location || value === undefined) {
+      if (location === undefined || value === undefined) {
         return
       }
 
       if (property.componentCount === 1) {
+        if (property.uiKind === 'texture') {
+          const assetId = typeof value === 'string' ? value : null
+          const texture = (assetId ? this.textureAssets.get(assetId) : null) ?? this.fallbackTexture
+
+          if (!texture) {
+            return
+          }
+
+          this.textureBindings.set(property.name, assetId ?? '')
+          this.gl.activeTexture(this.gl.TEXTURE0 + textureUnit)
+          this.gl.bindTexture(this.gl.TEXTURE_2D, texture)
+          this.gl.uniform1i(location, textureUnit)
+          textureUnit += 1
+          return
+        }
+
         if (property.uiKind === 'checkbox') {
           this.gl.uniform1i(location, value ? 1 : 0)
           return
@@ -287,8 +351,41 @@ export class WebGLQuadRenderer {
   dispose() {
     this.stop()
     this.resizeObserver.disconnect()
+    this.textureAssets.forEach((texture) => {
+      this.gl.deleteTexture(texture)
+    })
+    if (this.fallbackTexture) {
+      this.gl.deleteTexture(this.fallbackTexture)
+    }
     this.gl.deleteBuffer(this.positionBuffer)
     this.gl.deleteVertexArray(this.vao)
     this.gl.deleteProgram(this.program)
+  }
+
+  private createFallbackTexture() {
+    const texture = this.gl.createTexture()
+    if (!texture) {
+      return null
+    }
+
+    this.gl.bindTexture(this.gl.TEXTURE_2D, texture)
+    this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MIN_FILTER, this.gl.NEAREST)
+    this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MAG_FILTER, this.gl.NEAREST)
+    this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_S, this.gl.CLAMP_TO_EDGE)
+    this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_T, this.gl.CLAMP_TO_EDGE)
+    this.gl.texImage2D(
+      this.gl.TEXTURE_2D,
+      0,
+      this.gl.RGBA,
+      1,
+      1,
+      0,
+      this.gl.RGBA,
+      this.gl.UNSIGNED_BYTE,
+      new Uint8Array([255, 255, 255, 255]),
+    )
+    this.gl.bindTexture(this.gl.TEXTURE_2D, null)
+
+    return texture
   }
 }

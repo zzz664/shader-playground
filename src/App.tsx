@@ -12,6 +12,8 @@ import type {
   MaterialPropertyDefinition,
   MaterialPropertyValue,
 } from './shared/types/materialProperty'
+import type { TextureAsset } from './shared/types/textureAsset'
+import { loadTextureAsset } from './shared/utils/loadTextureAsset'
 
 function App() {
   const [vertexSource, setVertexSource] = useState(defaultVertexShaderSource)
@@ -27,7 +29,10 @@ function App() {
   const [diagnostics, setDiagnostics] = useState<RenderDiagnostics | null>(null)
   const [materialProperties, setMaterialProperties] = useState<MaterialPropertyDefinition[]>([])
   const [materialValues, setMaterialValues] = useState<Record<string, MaterialPropertyValue>>({})
+  const [textureAssets, setTextureAssets] = useState<TextureAsset[]>([])
+  const [textureLoadError, setTextureLoadError] = useState<string | null>(null)
   const hasMountedRef = useRef(false)
+  const textureAssetsRef = useRef<TextureAsset[]>([])
 
   const parsedLines = useMemo(() => {
     return diagnostics ? parseRenderDiagnostics(diagnostics) : []
@@ -101,23 +106,52 @@ function App() {
     }))
   }
 
+  const handleTextureUpload = async (propertyName: string, file: File) => {
+    setTextureLoadError(null)
+
+    try {
+      const { asset } = await loadTextureAsset(file)
+
+      setTextureAssets((currentAssets) => [...currentAssets, asset])
+      setMaterialValues((currentValues) => ({
+        ...currentValues,
+        [propertyName]: asset.id,
+      }))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '텍스처를 불러오지 못했습니다.'
+      setTextureLoadError(message)
+    }
+  }
+
+  useEffect(() => {
+    textureAssetsRef.current = textureAssets
+  }, [textureAssets])
+
+  useEffect(() => {
+    return () => {
+      textureAssetsRef.current.forEach((asset) => {
+        URL.revokeObjectURL(asset.previewUrl)
+        asset.bitmap.close()
+      })
+    }
+  }, [])
+
   return (
     <main className="app-shell">
       <section className="hero-panel">
-        <p className="panel__eyebrow">Sprint 3</p>
-        <h1>active uniform 기반 인스펙터를 붙인 머티리얼 실험 화면</h1>
+        <p className="panel__eyebrow">Sprint 4</p>
+        <h1>텍스처 업로드와 sampler2D 연결을 붙인 머티리얼 실험 화면</h1>
         <p className="hero-panel__description">
-          이번 단계는 active uniform reflection 결과로 인스펙터를 자동 생성하고, float/int/bool/vector
-          값을 렌더러 uniform에 반영하는 데 집중합니다.
+          이번 단계는 texture upload, `sampler2D` 슬롯 자동 연결, 텍스처 preview를 추가해 머티리얼 인스펙터를 확장하는 데 집중합니다.
         </p>
 
         <div className="hero-panel__grid">
           <article className="info-card">
             <h2>이번 작업 항목</h2>
             <ul>
-              <li>active uniform reflection</li>
-              <li>인스펙터 자동 생성</li>
-              <li>float/int/bool/vector 반영</li>
+              <li>texture upload</li>
+              <li>sampler2D 연결</li>
+              <li>texture preview</li>
             </ul>
           </article>
 
@@ -164,7 +198,10 @@ function App() {
           <MaterialInspectorPanel
             properties={materialProperties}
             values={materialValues}
+            textureAssets={textureAssets}
+            textureLoadError={textureLoadError}
             onValueChange={handleMaterialValueChange}
+            onTextureUpload={handleTextureUpload}
           />
         </div>
 
@@ -173,6 +210,7 @@ function App() {
             vertexSource={vertexSource}
             fragmentSource={fragmentSource}
             materialValues={materialValues}
+            textureAssets={textureAssets}
             compileRequest={compileRequest}
             onCompileResult={handleCompileResult}
           />

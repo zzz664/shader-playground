@@ -25,6 +25,7 @@ uniform vec2 uvOffset;
 uniform vec3 tintColor;
 uniform bool useTint;
 uniform int bandCount;
+uniform sampler2D detailTex;
 
 void main() {
   vec2 uv = vUv + uvOffset;
@@ -36,6 +37,7 @@ void main() {
   if (useTint) {
     color *= max(tintColor, vec3(0.001));
   }
+  color *= mix(vec3(1.0), texture(detailTex, uv).rgb, 0.35);
   outColor = vec4(color, 1.0);
 }
 `

@@ -11,10 +11,11 @@ export type MaterialPropertyValueType =
   | 'bvec2'
   | 'bvec3'
   | 'bvec4'
+  | 'texture2D'
 
-export type MaterialPropertyUiKind = 'number' | 'checkbox' | 'vector'
+export type MaterialPropertyUiKind = 'number' | 'checkbox' | 'vector' | 'texture'
 
-export type MaterialPropertyValue = number | boolean | number[] | boolean[]
+export type MaterialPropertyValue = number | boolean | number[] | boolean[] | string | null
 
 export interface MaterialPropertyDefinition {
   name: string

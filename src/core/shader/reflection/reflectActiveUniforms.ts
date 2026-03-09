@@ -46,6 +46,8 @@ function getSupportedUniformTemplate(
       return { valueType: 'bvec3', uiKind: 'vector', componentCount: 3 }
     case gl.BOOL_VEC4:
       return { valueType: 'bvec4', uiKind: 'vector', componentCount: 4 }
+    case gl.SAMPLER_2D:
+      return { valueType: 'texture2D', uiKind: 'texture', componentCount: 1 }
     default:
       return null
   }
@@ -91,6 +93,10 @@ export function createDefaultMaterialValue(definition: MaterialPropertyDefinitio
     return false
   }
 
+  if (definition.uiKind === 'texture') {
+    return null
+  }
+
   if (definition.componentCount === 1) {
     return 0
   }
@@ -111,6 +117,10 @@ export function isMaterialValueCompatible(
   }
 
   if (definition.componentCount === 1) {
+    if (definition.uiKind === 'texture') {
+      return typeof value === 'string' || value === null
+    }
+
     return definition.uiKind === 'checkbox' ? typeof value === 'boolean' : typeof value === 'number'
   }
 
