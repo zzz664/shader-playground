@@ -1,11 +1,12 @@
 :root {
-  font-family: Inter, "Segoe UI", sans-serif;
+  font-family: "Segoe UI", "Noto Sans KR", sans-serif;
   line-height: 1.5;
   font-weight: 400;
   color: #e2e8f0;
   background:
-    radial-gradient(circle at top, rgba(14, 165, 233, 0.2), transparent 40%),
-    linear-gradient(180deg, #020617 0%, #0f172a 100%);
+    radial-gradient(circle at top left, rgba(245, 158, 11, 0.18), transparent 28%),
+    radial-gradient(circle at top right, rgba(14, 165, 233, 0.16), transparent 30%),
+    linear-gradient(180deg, #020617 0%, #111827 100%);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -22,6 +23,18 @@ body {
   min-height: 100vh;
 }
 
+body,
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
 #root {
   min-height: 100vh;
+}
+
+a {
+  color: inherit;
 }
