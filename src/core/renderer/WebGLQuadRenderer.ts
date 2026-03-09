@@ -1,16 +1,27 @@
 import { createShaderProgram } from '../shader/compiler/shaderCompiler'
 import {
+  createDefaultMaterialValue,
+  isMaterialValueCompatible,
+  reflectActiveUniforms,
+} from '../shader/reflection/reflectActiveUniforms'
+import {
   defaultFragmentShaderSource,
   defaultVertexShaderSource,
 } from '../shader/templates/defaultShaders'
 import { createWebGL2Context } from './gl/webglContext'
 import type { RenderDiagnostics } from '../../shared/types/renderDiagnostics'
+import type {
+  MaterialPropertyDefinition,
+  MaterialPropertyValue,
+} from '../../shared/types/materialProperty'
 
 export interface RendererStateSnapshot {
   diagnostics: RenderDiagnostics
   viewportWidth: number
   viewportHeight: number
   compileSucceeded: boolean
+  materialProperties: MaterialPropertyDefinition[]
+  materialValues: Record<string, MaterialPropertyValue>
 }
 
 export class WebGLQuadRenderer {
@@ -28,6 +39,9 @@ export class WebGLQuadRenderer {
   private viewportHeight = 0
   private diagnostics: RenderDiagnostics
   private compileSucceeded = false
+  private materialProperties: MaterialPropertyDefinition[] = []
+  private materialValues: Record<string, MaterialPropertyValue> = {}
+  private materialUniformLocations = new Map<string, WebGLUniformLocation>()
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -65,6 +79,7 @@ export class WebGLQuadRenderer {
     this.positionBuffer = positionBuffer
     this.timeLocation = this.gl.getUniformLocation(this.program, 'uTime')
     this.resolutionLocation = this.gl.getUniformLocation(this.program, 'uResolution')
+    this.syncMaterialProperties()
 
     this.configureQuad()
     this.resizeObserver = new ResizeObserver(() => {
@@ -135,6 +150,8 @@ export class WebGLQuadRenderer {
       this.gl.uniform2f(this.resolutionLocation, this.viewportWidth, this.viewportHeight)
     }
 
+    this.applyMaterialUniforms()
+
     this.gl.bindVertexArray(this.vao)
     this.gl.drawArrays(this.gl.TRIANGLES, 0, 6)
     this.gl.bindVertexArray(null)
@@ -153,6 +170,8 @@ export class WebGLQuadRenderer {
       viewportWidth: this.viewportWidth,
       viewportHeight: this.viewportHeight,
       compileSucceeded: this.compileSucceeded,
+      materialProperties: this.materialProperties,
+      materialValues: this.materialValues,
     }
   }
 
@@ -169,9 +188,100 @@ export class WebGLQuadRenderer {
     this.program = program
     this.timeLocation = this.gl.getUniformLocation(this.program, 'uTime')
     this.resolutionLocation = this.gl.getUniformLocation(this.program, 'uResolution')
+    this.syncMaterialProperties()
     this.compileSucceeded = true
 
     return this.getSnapshot()
+  }
+
+  updateMaterialValues(nextValues: Record<string, MaterialPropertyValue>) {
+    this.materialValues = nextValues
+  }
+
+  private syncMaterialProperties() {
+    const reflectedProperties = reflectActiveUniforms(this.gl, this.program).filter((property) => !property.builtin)
+    const nextUniformLocations = new Map<string, WebGLUniformLocation>()
+    const nextValues: Record<string, MaterialPropertyValue> = {}
+
+    reflectedProperties.forEach((property) => {
+      const location = this.gl.getUniformLocation(this.program, property.name)
+      if (location) {
+        nextUniformLocations.set(property.name, location)
+      }
+
+      const currentValue = this.materialValues[property.name]
+      nextValues[property.name] = isMaterialValueCompatible(property, currentValue)
+        ? currentValue
+        : createDefaultMaterialValue(property)
+    })
+
+    this.materialProperties = reflectedProperties
+    this.materialUniformLocations = nextUniformLocations
+    this.materialValues = nextValues
+  }
+
+  private applyMaterialUniforms() {
+    this.materialProperties.forEach((property) => {
+      const location = this.materialUniformLocations.get(property.name)
+      const value = this.materialValues[property.name]
+
+      if (!location || value === undefined) {
+        return
+      }
+
+      if (property.componentCount === 1) {
+        if (property.uiKind === 'checkbox') {
+          this.gl.uniform1i(location, value ? 1 : 0)
+          return
+        }
+
+        if (property.valueType === 'float') {
+          this.gl.uniform1f(location, Number(value))
+          return
+        }
+
+        this.gl.uniform1i(location, Number(value))
+        return
+      }
+
+      if (!Array.isArray(value)) {
+        return
+      }
+
+      if (property.valueType.startsWith('bvec')) {
+        const booleanValues = value.map((entry) => (entry ? 1 : 0))
+
+        if (property.componentCount === 2) {
+          this.gl.uniform2iv(location, booleanValues)
+        } else if (property.componentCount === 3) {
+          this.gl.uniform3iv(location, booleanValues)
+        } else {
+          this.gl.uniform4iv(location, booleanValues)
+        }
+
+        return
+      }
+
+      if (property.valueType.startsWith('vec')) {
+        if (property.componentCount === 2) {
+          this.gl.uniform2f(location, Number(value[0]), Number(value[1]))
+        } else if (property.componentCount === 3) {
+          this.gl.uniform3f(location, Number(value[0]), Number(value[1]), Number(value[2]))
+        } else {
+          this.gl.uniform4f(location, Number(value[0]), Number(value[1]), Number(value[2]), Number(value[3]))
+        }
+
+        return
+      }
+
+      if (property.componentCount === 2) {
+        this.gl.uniform2iv(location, value.map((entry) => Number(entry)))
+      } else if (property.componentCount === 3) {
+        this.gl.uniform3iv(location, value.map((entry) => Number(entry)))
+      } else {
+        this.gl.uniform4iv(location, value.map((entry) => Number(entry)))
+      }
+    })
   }
 
   dispose() {

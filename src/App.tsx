@@ -3,10 +3,15 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { defaultFragmentShaderSource, defaultVertexShaderSource } from './core/shader/templates/defaultShaders'
 import { CompilePanel } from './features/compile-panel/CompilePanel'
 import { ShaderEditorPanel } from './features/editor/ShaderEditorPanel'
+import { MaterialInspectorPanel } from './features/inspector/MaterialInspectorPanel'
 import { ViewportPanel } from './features/viewport/ViewportPanel'
 import type { RendererStateSnapshot } from './core/renderer/WebGLQuadRenderer'
 import type { RenderDiagnostics } from './shared/types/renderDiagnostics'
 import { parseRenderDiagnostics } from './shared/utils/parseDiagnostics'
+import type {
+  MaterialPropertyDefinition,
+  MaterialPropertyValue,
+} from './shared/types/materialProperty'
 
 function App() {
   const [vertexSource, setVertexSource] = useState(defaultVertexShaderSource)
@@ -20,6 +25,8 @@ function App() {
   const [lastCompileMode, setLastCompileMode] = useState<'manual' | 'auto' | 'initial'>('initial')
   const [lastCompileSucceeded, setLastCompileSucceeded] = useState(true)
   const [diagnostics, setDiagnostics] = useState<RenderDiagnostics | null>(null)
+  const [materialProperties, setMaterialProperties] = useState<MaterialPropertyDefinition[]>([])
+  const [materialValues, setMaterialValues] = useState<Record<string, MaterialPropertyValue>>({})
   const hasMountedRef = useRef(false)
 
   const parsedLines = useMemo(() => {
@@ -82,27 +89,35 @@ function App() {
     setDiagnostics(snapshot.diagnostics)
     setLastCompileSucceeded(snapshot.compileSucceeded)
     setLastCompileMode(compileMode)
+    setMaterialProperties(snapshot.materialProperties)
+    setMaterialValues(snapshot.materialValues)
     setIsCompiling(false)
+  }
+
+  const handleMaterialValueChange = (name: string, value: MaterialPropertyValue) => {
+    setMaterialValues((currentValues) => ({
+      ...currentValues,
+      [name]: value,
+    }))
   }
 
   return (
     <main className="app-shell">
       <section className="hero-panel">
-        <p className="panel__eyebrow">Sprint 2</p>
-        <h1>코드 편집과 컴파일 제어를 붙인 셰이더 실험 화면</h1>
+        <p className="panel__eyebrow">Sprint 3</p>
+        <h1>active uniform 기반 인스펙터를 붙인 머티리얼 실험 화면</h1>
         <p className="hero-panel__description">
-          이번 단계는 vertex/fragment 코드 편집, 수동 compile 버튼, auto compile, 오류 패널을 추가해
-          렌더러와 편집 흐름을 연결하는 데 집중합니다.
+          이번 단계는 active uniform reflection 결과로 인스펙터를 자동 생성하고, float/int/bool/vector
+          값을 렌더러 uniform에 반영하는 데 집중합니다.
         </p>
 
         <div className="hero-panel__grid">
           <article className="info-card">
             <h2>이번 작업 항목</h2>
             <ul>
-              <li>코드 에디터 통합</li>
-              <li>Compile 버튼 추가</li>
-              <li>Auto Compile 추가</li>
-              <li>오류 패널 추가</li>
+              <li>active uniform reflection</li>
+              <li>인스펙터 자동 생성</li>
+              <li>float/int/bool/vector 반영</li>
             </ul>
           </article>
 
@@ -145,12 +160,19 @@ function App() {
             onCompile={handleCompileClick}
             onToggleAutoCompile={setAutoCompile}
           />
+
+          <MaterialInspectorPanel
+            properties={materialProperties}
+            values={materialValues}
+            onValueChange={handleMaterialValueChange}
+          />
         </div>
 
         <aside className="workspace-sidebar">
           <ViewportPanel
             vertexSource={vertexSource}
             fragmentSource={fragmentSource}
+            materialValues={materialValues}
             compileRequest={compileRequest}
             onCompileResult={handleCompileResult}
           />
