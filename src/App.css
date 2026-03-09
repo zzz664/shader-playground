@@ -431,6 +431,65 @@
   height: 420px;
 }
 
+.model-upload-card {
+  display: grid;
+  gap: 0.85rem;
+  margin-top: 1rem;
+  padding: 1rem;
+  border-radius: 1rem;
+  background: rgba(2, 6, 23, 0.58);
+}
+
+.model-upload-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.model-upload-card__facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.model-upload-card__facts div {
+  padding: 0.8rem;
+  border-radius: 0.9rem;
+  background: rgba(15, 23, 42, 0.72);
+}
+
+.model-upload-card__facts dt {
+  color: #94a3b8;
+  font-size: 0.8rem;
+}
+
+.model-upload-card__facts dd {
+  margin: 0.4rem 0 0;
+  font-weight: 700;
+}
+
+.model-upload-card__empty,
+.model-upload-card__error {
+  margin: 0;
+  color: #cbd5e1;
+  font-size: 0.85rem;
+}
+
+.model-upload-card__error {
+  color: #fca5a5;
+}
+
+.model-upload-card__warnings {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+  padding-left: 1rem;
+  color: #fde68a;
+  font-size: 0.82rem;
+}
+
 .viewport-panel__message {
   margin: 1rem 0 0;
   color: #cbd5e1;

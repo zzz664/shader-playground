@@ -60,16 +60,19 @@ void main() {
   vec2 aspectUv = (uv * 2.0 - 1.0) * vec2(uResolution.x / max(uResolution.y, 1.0), 1.0);
   float bands = max(float(bandCount), 1.0);
   float wave = 0.5 + 0.5 * sin(uTime + aspectUv.x * (4.0 + edgePower * bands));
-  vec3 color = mix(vec3(0.05, 0.09, 0.16), vec3(0.12, 0.72, 0.94), wave);
-  color += 0.08 * vec3(uv, 1.0 - uv.x);
+  vec3 baseColor = mix(vec3(0.05, 0.09, 0.16), vec3(0.12, 0.72, 0.94), wave);
+  baseColor += 0.08 * vec3(uv, 1.0 - uv.x);
+  vec3 color = baseColor;
 
   if (uSceneMode == 1) {
     vec3 normal = normalize(vNormal);
     vec3 lightDir = normalize(vec3(0.4, 0.7, 0.5));
     vec3 viewDir = normalize(uCameraPos - vWorldPos);
-    float diffuse = max(dot(normal, lightDir), 0.0);
+    float lambert = max(dot(normal, lightDir), 0.0);
+    vec3 ambient = baseColor * 0.22;
+    vec3 diffuse = baseColor * lambert;
     float fresnel = pow(1.0 - max(dot(normal, viewDir), 0.0), 3.0);
-    color *= 0.35 + diffuse * 0.9;
+    color = ambient + diffuse;
     color += fresnel * vec3(0.08, 0.18, 0.28);
   }
 

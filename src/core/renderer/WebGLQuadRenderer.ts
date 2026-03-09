@@ -1,20 +1,21 @@
+import type { MaterialPropertyDefinition, MaterialPropertyValue } from '../../shared/types/materialProperty'
+import type { ModelAsset, ModelBounds } from '../../shared/types/modelAsset'
 import type { RenderDiagnostics } from '../../shared/types/renderDiagnostics'
 import type {
-  MaterialPropertyDefinition,
-  MaterialPropertyValue,
-} from '../../shared/types/materialProperty'
-import type { GeometryPreviewId, SceneMode, ViewportCameraState } from '../../shared/types/scenePreview'
+  BlendMode,
+  GeometryPreviewId,
+  SceneMode,
+  ViewportCameraState,
+} from '../../shared/types/scenePreview'
 import type { TextureAsset } from '../../shared/types/textureAsset'
+import { frameModelBounds } from '../model/framing/frameModelBounds'
 import { createShaderProgram } from '../shader/compiler/shaderCompiler'
 import {
   createDefaultMaterialValue,
   isMaterialValueCompatible,
   reflectActiveUniforms,
 } from '../shader/reflection/reflectActiveUniforms'
-import {
-  defaultFragmentShaderSource,
-  defaultVertexShaderSource,
-} from '../shader/templates/defaultShaders'
+import { defaultFragmentShaderSource, defaultVertexShaderSource } from '../shader/templates/defaultShaders'
 import { createScreenQuadMesh, getPrimitiveMeshData, PRIMITIVE_VERTEX_STRIDE } from './geometry/primitiveMeshes'
 import { createWebGL2Context } from './gl/webglContext'
 import {
@@ -29,6 +30,7 @@ interface UploadedMesh {
   vertexBuffer: WebGLBuffer
   indexBuffer: WebGLBuffer
   indexCount: number
+  indexType: number
 }
 
 interface RendererUniformLocations {
@@ -50,6 +52,7 @@ export interface RendererStateSnapshot {
   materialValues: Record<string, MaterialPropertyValue>
   sceneMode: SceneMode
   geometryId: GeometryPreviewId
+  blendMode: BlendMode
 }
 
 export class WebGLQuadRenderer {
@@ -71,8 +74,11 @@ export class WebGLQuadRenderer {
   private uniformLocations: RendererUniformLocations
   private screenMesh: UploadedMesh
   private geometryMeshes: Record<GeometryPreviewId, UploadedMesh>
+  private uploadedModelMesh: UploadedMesh | null = null
+  private uploadedModelBounds: ModelBounds | null = null
   private sceneMode: SceneMode = 'screen'
   private geometryId: GeometryPreviewId = 'cube'
+  private blendMode: BlendMode = 'opaque'
   private cameraState: ViewportCameraState = {
     yaw: 0.6,
     pitch: 0.45,
@@ -155,6 +161,7 @@ export class WebGLQuadRenderer {
       materialValues: this.materialValues,
       sceneMode: this.sceneMode,
       geometryId: this.geometryId,
+      blendMode: this.blendMode,
     }
   }
 
@@ -188,8 +195,30 @@ export class WebGLQuadRenderer {
     this.geometryId = geometryId
   }
 
+  updateBlendMode(blendMode: BlendMode) {
+    this.blendMode = blendMode
+  }
+
   updateCameraState(cameraState: ViewportCameraState) {
     this.cameraState = cameraState
+  }
+
+  updateModelAsset(modelAsset: ModelAsset | null) {
+    if (this.uploadedModelMesh) {
+      this.deleteMesh(this.uploadedModelMesh)
+      this.uploadedModelMesh = null
+    }
+    this.uploadedModelBounds = null
+
+    if (!modelAsset) {
+      return
+    }
+
+    this.uploadedModelMesh = this.createMesh({
+      vertices: modelAsset.vertices,
+      indices: modelAsset.indices,
+    })
+    this.uploadedModelBounds = modelAsset.bounds
   }
 
   syncTextureAssets(assets: TextureAsset[]) {
@@ -245,25 +274,39 @@ export class WebGLQuadRenderer {
     Object.values(this.geometryMeshes).forEach((mesh) => {
       this.deleteMesh(mesh)
     })
+    if (this.uploadedModelMesh) {
+      this.deleteMesh(this.uploadedModelMesh)
+    }
     this.gl.deleteProgram(this.program)
   }
 
   private render(elapsedSeconds: number) {
     const aspect = this.viewportWidth / Math.max(this.viewportHeight, 1)
-    const cameraPosition = this.getCameraPosition()
-    const viewMatrix = createLookAtMatrix4(cameraPosition, [0, 0, 0], [0, 1, 0])
-    const projectionMatrix = createPerspectiveMatrix4(Math.PI / 3, Math.max(aspect, 0.0001), 0.1, 100)
+    const frameState = this.uploadedModelBounds ? frameModelBounds(this.uploadedModelBounds) : null
+    const cameraTarget = frameState?.center ?? [0, 0, 0]
+    const cameraPosition = this.getCameraPosition(cameraTarget)
+    const viewMatrix = createLookAtMatrix4(cameraPosition, cameraTarget, [0, 1, 0])
+    const projectionMatrix = createPerspectiveMatrix4(
+      Math.PI / 3,
+      Math.max(aspect, 0.0001),
+      frameState?.near ?? 0.1,
+      frameState?.far ?? 100,
+    )
     const modelMatrix =
       this.sceneMode === 'model' ? createYRotationMatrix4(elapsedSeconds * 0.35) : createIdentityMatrix4()
 
     this.gl.clearColor(0.02, 0.04, 0.08, 1)
     this.gl.clear(this.gl.COLOR_BUFFER_BIT | this.gl.DEPTH_BUFFER_BIT)
     this.gl.useProgram(this.program)
+    this.applyBlendMode()
 
     if (this.sceneMode === 'screen') {
       this.gl.disable(this.gl.DEPTH_TEST)
+      this.gl.disable(this.gl.CULL_FACE)
     } else {
       this.gl.enable(this.gl.DEPTH_TEST)
+      this.gl.enable(this.gl.CULL_FACE)
+      this.gl.cullFace(this.gl.BACK)
     }
 
     if (this.uniformLocations.time) {
@@ -301,9 +344,20 @@ export class WebGLQuadRenderer {
 
     this.applyMaterialUniforms()
 
+    if (this.sceneMode === 'model' && this.uploadedModelMesh) {
+      this.gl.disable(this.gl.CULL_FACE)
+      this.drawMesh(this.uploadedModelMesh)
+      this.gl.bindVertexArray(null)
+      return
+    }
+
+    if (this.sceneMode !== 'screen') {
+      this.gl.enable(this.gl.CULL_FACE)
+      this.gl.cullFace(this.gl.BACK)
+    }
+
     const mesh = this.sceneMode === 'screen' ? this.screenMesh : this.geometryMeshes[this.geometryId]
-    this.gl.bindVertexArray(mesh.vao)
-    this.gl.drawElements(this.gl.TRIANGLES, mesh.indexCount, this.gl.UNSIGNED_SHORT, 0)
+    this.drawMesh(mesh)
     this.gl.bindVertexArray(null)
   }
 
@@ -320,6 +374,31 @@ export class WebGLQuadRenderer {
     this.viewportWidth = nextWidth
     this.viewportHeight = nextHeight
     this.gl.viewport(0, 0, nextWidth, nextHeight)
+  }
+
+  private applyBlendMode() {
+    if (this.blendMode === 'opaque') {
+      this.gl.disable(this.gl.BLEND)
+      this.gl.depthMask(true)
+      return
+    }
+
+    this.gl.enable(this.gl.BLEND)
+
+    if (this.blendMode === 'alpha') {
+      this.gl.blendEquation(this.gl.FUNC_ADD)
+      this.gl.blendFuncSeparate(
+        this.gl.SRC_ALPHA,
+        this.gl.ONE_MINUS_SRC_ALPHA,
+        this.gl.ONE,
+        this.gl.ONE_MINUS_SRC_ALPHA,
+      )
+    } else {
+      this.gl.blendEquation(this.gl.FUNC_ADD)
+      this.gl.blendFunc(this.gl.SRC_ALPHA, this.gl.ONE)
+    }
+
+    this.gl.depthMask(false)
   }
 
   private syncMaterialProperties() {
@@ -437,7 +516,7 @@ export class WebGLQuadRenderer {
     }
   }
 
-  private createMesh(meshData: { vertices: Float32Array; indices: Uint16Array }): UploadedMesh {
+  private createMesh(meshData: { vertices: Float32Array; indices: Uint16Array | Uint32Array }): UploadedMesh {
     const vao = this.gl.createVertexArray()
     const vertexBuffer = this.gl.createBuffer()
     const indexBuffer = this.gl.createBuffer()
@@ -482,6 +561,7 @@ export class WebGLQuadRenderer {
       vertexBuffer,
       indexBuffer,
       indexCount: meshData.indices.length,
+      indexType: meshData.indices instanceof Uint32Array ? this.gl.UNSIGNED_INT : this.gl.UNSIGNED_SHORT,
     }
   }
 
@@ -489,6 +569,11 @@ export class WebGLQuadRenderer {
     this.gl.deleteBuffer(mesh.vertexBuffer)
     this.gl.deleteBuffer(mesh.indexBuffer)
     this.gl.deleteVertexArray(mesh.vao)
+  }
+
+  private drawMesh(mesh: UploadedMesh) {
+    this.gl.bindVertexArray(mesh.vao)
+    this.gl.drawElements(this.gl.TRIANGLES, mesh.indexCount, mesh.indexType, 0)
   }
 
   private createFallbackTexture() {
@@ -518,16 +603,16 @@ export class WebGLQuadRenderer {
     return texture
   }
 
-  private getCameraPosition(): [number, number, number] {
+  private getCameraPosition(target: [number, number, number]): [number, number, number] {
     const distance = Math.max(this.cameraState.distance, 1.6)
     const pitch = this.cameraState.pitch
     const yaw = this.cameraState.yaw
     const radius = distance * Math.cos(pitch)
 
     return [
-      Math.sin(yaw) * radius,
-      Math.sin(pitch) * distance,
-      Math.cos(yaw) * radius,
+      target[0] + Math.sin(yaw) * radius,
+      target[1] + Math.sin(pitch) * distance,
+      target[2] + Math.cos(yaw) * radius,
     ]
   }
 }
