@@ -4,6 +4,7 @@ const builtinUniformNames = new Set([
   'uTime',
   'uResolution',
   'uMouse',
+  'uSceneMode',
   'uModel',
   'uView',
   'uProj',

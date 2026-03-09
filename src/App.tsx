@@ -1,19 +1,20 @@
 import './App.css'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import type { RendererStateSnapshot } from './core/renderer/WebGLQuadRenderer'
 import { defaultFragmentShaderSource, defaultVertexShaderSource } from './core/shader/templates/defaultShaders'
 import { CompilePanel } from './features/compile-panel/CompilePanel'
 import { ShaderEditorPanel } from './features/editor/ShaderEditorPanel'
 import { MaterialInspectorPanel } from './features/inspector/MaterialInspectorPanel'
 import { ViewportPanel } from './features/viewport/ViewportPanel'
-import type { RendererStateSnapshot } from './core/renderer/WebGLQuadRenderer'
-import type { RenderDiagnostics } from './shared/types/renderDiagnostics'
-import { parseRenderDiagnostics } from './shared/utils/parseDiagnostics'
 import type {
   MaterialPropertyDefinition,
   MaterialPropertyValue,
 } from './shared/types/materialProperty'
+import type { RenderDiagnostics } from './shared/types/renderDiagnostics'
+import type { GeometryPreviewId, SceneMode, ViewportCameraState } from './shared/types/scenePreview'
 import type { TextureAsset } from './shared/types/textureAsset'
 import { loadTextureAsset } from './shared/utils/loadTextureAsset'
+import { parseRenderDiagnostics } from './shared/utils/parseDiagnostics'
 
 function App() {
   const [vertexSource, setVertexSource] = useState(defaultVertexShaderSource)
@@ -31,6 +32,13 @@ function App() {
   const [materialValues, setMaterialValues] = useState<Record<string, MaterialPropertyValue>>({})
   const [textureAssets, setTextureAssets] = useState<TextureAsset[]>([])
   const [textureLoadError, setTextureLoadError] = useState<string | null>(null)
+  const [sceneMode, setSceneMode] = useState<SceneMode>('screen')
+  const [geometryId, setGeometryId] = useState<GeometryPreviewId>('cube')
+  const [cameraState, setCameraState] = useState<ViewportCameraState>({
+    yaw: 0.6,
+    pitch: 0.45,
+    distance: 4.8,
+  })
   const hasMountedRef = useRef(false)
   const textureAssetsRef = useRef<TextureAsset[]>([])
 
@@ -39,11 +47,7 @@ function App() {
   }, [diagnostics])
 
   useEffect(() => {
-    if (!hasMountedRef.current) {
-      return
-    }
-
-    if (!autoCompile) {
+    if (!hasMountedRef.current || !autoCompile) {
       return
     }
 
@@ -96,6 +100,8 @@ function App() {
     setLastCompileMode(compileMode)
     setMaterialProperties(snapshot.materialProperties)
     setMaterialValues(snapshot.materialValues)
+    setSceneMode(snapshot.sceneMode)
+    setGeometryId(snapshot.geometryId)
     setIsCompiling(false)
   }
 
@@ -111,7 +117,6 @@ function App() {
 
     try {
       const { asset } = await loadTextureAsset(file)
-
       setTextureAssets((currentAssets) => [...currentAssets, asset])
       setMaterialValues((currentValues) => ({
         ...currentValues,
@@ -139,19 +144,20 @@ function App() {
   return (
     <main className="app-shell">
       <section className="hero-panel">
-        <p className="panel__eyebrow">Sprint 4</p>
-        <h1>텍스처 업로드와 sampler2D 연결을 붙인 머티리얼 실험 화면</h1>
+        <p className="panel__eyebrow">Sprint 5</p>
+        <h1>기본 geometry preview와 scene mode 분리를 추가한 셰이더 플레이그라운드</h1>
         <p className="hero-panel__description">
-          이번 단계는 texture upload, `sampler2D` 슬롯 자동 연결, 텍스처 preview를 추가해 머티리얼 인스펙터를 확장하는 데 집중합니다.
+          이번 단계에서는 fullscreen screen preview와 model preview를 분리하고, plane/cube/sphere
+          geometry와 기본 viewport controls를 연결합니다.
         </p>
 
         <div className="hero-panel__grid">
           <article className="info-card">
             <h2>이번 작업 항목</h2>
             <ul>
-              <li>texture upload</li>
-              <li>sampler2D 연결</li>
-              <li>texture preview</li>
+              <li>기본 geometry preview</li>
+              <li>screen/model mode 분리</li>
+              <li>viewport controls 기초</li>
             </ul>
           </article>
 
@@ -159,9 +165,9 @@ function App() {
             <h2>적용 기준</h2>
             <ul>
               <li>WebGL2 우선</li>
-              <li>GLSL ES 3.00 템플릿 사용</li>
-              <li>에러는 화면에 드러내기</li>
-              <li>과도한 추상화는 보류</li>
+              <li>기본 프리미티브만 제공</li>
+              <li>마우스 orbit camera는 보류</li>
+              <li>glTF 업로드는 이번 범위에서 제외</li>
             </ul>
           </article>
         </div>
@@ -211,7 +217,13 @@ function App() {
             fragmentSource={fragmentSource}
             materialValues={materialValues}
             textureAssets={textureAssets}
+            sceneMode={sceneMode}
+            geometryId={geometryId}
+            cameraState={cameraState}
             compileRequest={compileRequest}
+            onSceneModeChange={setSceneMode}
+            onGeometryChange={setGeometryId}
+            onCameraChange={setCameraState}
             onCompileResult={handleCompileResult}
           />
         </aside>

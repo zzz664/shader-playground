@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { WebGLQuadRenderer, type RendererStateSnapshot } from '../../core/renderer/WebGLQuadRenderer'
 import type { MaterialPropertyValue } from '../../shared/types/materialProperty'
+import type { GeometryPreviewId, SceneMode, ViewportCameraState } from '../../shared/types/scenePreview'
 import type { TextureAsset } from '../../shared/types/textureAsset'
 
 interface ViewportPanelState {
@@ -14,19 +15,37 @@ interface ViewportPanelProps {
   fragmentSource: string
   materialValues: Record<string, MaterialPropertyValue>
   textureAssets: TextureAsset[]
+  sceneMode: SceneMode
+  geometryId: GeometryPreviewId
+  cameraState: ViewportCameraState
   compileRequest: {
     token: number
     mode: 'auto' | 'manual'
   }
+  onSceneModeChange: (sceneMode: SceneMode) => void
+  onGeometryChange: (geometryId: GeometryPreviewId) => void
+  onCameraChange: (cameraState: ViewportCameraState) => void
   onCompileResult: (snapshot: RendererStateSnapshot, compileMode: 'initial' | 'auto' | 'manual') => void
 }
+
+const geometryOptions: Array<{ value: GeometryPreviewId; label: string }> = [
+  { value: 'plane', label: 'Plane' },
+  { value: 'cube', label: 'Cube' },
+  { value: 'sphere', label: 'Sphere' },
+]
 
 export function ViewportPanel({
   vertexSource,
   fragmentSource,
   materialValues,
   textureAssets,
+  sceneMode,
+  geometryId,
+  cameraState,
   compileRequest,
+  onSceneModeChange,
+  onGeometryChange,
+  onCameraChange,
   onCompileResult,
 }: ViewportPanelProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -36,6 +55,11 @@ export function ViewportPanel({
   const initialSourcesRef = useRef({
     vertexSource,
     fragmentSource,
+  })
+  const initialPreviewRef = useRef({
+    sceneMode,
+    geometryId,
+    cameraState,
   })
   const [state, setState] = useState<ViewportPanelState>({
     ready: false,
@@ -60,18 +84,21 @@ export function ViewportPanel({
         vertexSource: initialSourcesRef.current.vertexSource,
         fragmentSource: initialSourcesRef.current.fragmentSource,
       })
-      rendererRef.current = renderer
+      renderer.updateSceneMode(initialPreviewRef.current.sceneMode)
+      renderer.updateGeometry(initialPreviewRef.current.geometryId)
+      renderer.updateCameraState(initialPreviewRef.current.cameraState)
       renderer.start()
-      const snapshot = renderer.getSnapshot()
+      rendererRef.current = renderer
 
+      const snapshot = renderer.getSnapshot()
       setState({
         ready: true,
-        message: 'WebGL2, fullscreen quad, 기본 셰이더 링크가 완료되었습니다.',
+        message: 'WebGL2 viewport와 기본 geometry preview를 준비했습니다.',
         snapshot,
       })
       onCompileResultRef.current(snapshot, 'initial')
     } catch (error) {
-      const message = error instanceof Error ? error.message : '알 수 없는 초기화 오류가 발생했습니다.'
+      const message = error instanceof Error ? error.message : '초기화 중 알 수 없는 오류가 발생했습니다.'
       setState({
         ready: false,
         message,
@@ -93,15 +120,13 @@ export function ViewportPanel({
 
     compileTokenRef.current = compileRequest.token
     const snapshot = renderer.compileSources(vertexSource, fragmentSource)
-
     setState((currentState) => ({
       ...currentState,
       snapshot,
       message: snapshot.compileSucceeded
-        ? '최신 셰이더가 적용되었습니다.'
-        : '컴파일에 실패하여 마지막 성공 결과를 유지합니다.',
+        ? '최신 셰이더를 적용했습니다.'
+        : '컴파일에 실패해 마지막 성공 렌더 결과를 유지합니다.',
     }))
-
     onCompileResultRef.current(snapshot, compileRequest.mode)
   }, [compileRequest.mode, compileRequest.token, fragmentSource, vertexSource])
 
@@ -113,20 +138,140 @@ export function ViewportPanel({
     rendererRef.current?.syncTextureAssets(textureAssets)
   }, [textureAssets])
 
+  useEffect(() => {
+    const renderer = rendererRef.current
+    if (!renderer) {
+      return
+    }
+
+    renderer.updateSceneMode(sceneMode)
+  }, [sceneMode])
+
+  useEffect(() => {
+    const renderer = rendererRef.current
+    if (!renderer) {
+      return
+    }
+
+    renderer.updateGeometry(geometryId)
+  }, [geometryId])
+
+  useEffect(() => {
+    rendererRef.current?.updateCameraState(cameraState)
+  }, [cameraState])
+
+  const handleCameraAxisChange =
+    (key: keyof ViewportCameraState) => (event: ChangeEvent<HTMLInputElement>) => {
+      onCameraChange({
+        ...cameraState,
+        [key]: Number(event.target.value),
+      })
+    }
+
+  const handleCameraReset = () => {
+    onCameraChange({
+      yaw: 0.6,
+      pitch: 0.45,
+      distance: 4.8,
+    })
+  }
+
   return (
     <section className="viewport-panel">
       <div className="viewport-panel__header">
         <div>
           <p className="panel__eyebrow">Viewport</p>
-          <h2>WebGL2 fullscreen quad</h2>
+          <h2>{sceneMode === 'screen' ? 'Screen Preview' : 'Geometry Preview'}</h2>
         </div>
         <span className={`status-chip ${state.ready ? 'status-chip--ready' : 'status-chip--error'}`}>
           {state.ready ? '준비됨' : '오류'}
         </span>
       </div>
 
+      <div className="viewport-toolbar">
+        <div className="viewport-toolbar__group">
+          <button
+            type="button"
+            className={`viewport-mode-button ${sceneMode === 'screen' ? 'viewport-mode-button--active' : ''}`}
+            onClick={() => onSceneModeChange('screen')}
+          >
+            Screen
+          </button>
+          <button
+            type="button"
+            className={`viewport-mode-button ${sceneMode === 'model' ? 'viewport-mode-button--active' : ''}`}
+            onClick={() => onSceneModeChange('model')}
+          >
+            Model
+          </button>
+        </div>
+
+        <label className="viewport-toolbar__select">
+          <span>Geometry</span>
+          <select
+            value={geometryId}
+            onChange={(event) => onGeometryChange(event.target.value as GeometryPreviewId)}
+            disabled={sceneMode !== 'model'}
+          >
+            {geometryOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
       <div className="viewport-panel__canvas-frame">
         <canvas ref={canvasRef} className="viewport-panel__canvas" />
+      </div>
+
+      <div className="viewport-controls">
+        <div className="viewport-controls__header">
+          <strong>Viewport Controls</strong>
+          <button type="button" className="viewport-controls__reset" onClick={handleCameraReset}>
+            Reset
+          </button>
+        </div>
+
+        <div className="viewport-controls__grid">
+          <label>
+            <span>Yaw</span>
+            <input
+              type="range"
+              min={-3.14}
+              max={3.14}
+              step={0.01}
+              value={cameraState.yaw}
+              onChange={handleCameraAxisChange('yaw')}
+              disabled={sceneMode !== 'model'}
+            />
+          </label>
+          <label>
+            <span>Pitch</span>
+            <input
+              type="range"
+              min={-1.2}
+              max={1.2}
+              step={0.01}
+              value={cameraState.pitch}
+              onChange={handleCameraAxisChange('pitch')}
+              disabled={sceneMode !== 'model'}
+            />
+          </label>
+          <label>
+            <span>Distance</span>
+            <input
+              type="range"
+              min={2}
+              max={8}
+              step={0.05}
+              value={cameraState.distance}
+              onChange={handleCameraAxisChange('distance')}
+              disabled={sceneMode !== 'model'}
+            />
+          </label>
+        </div>
       </div>
 
       <p className="viewport-panel__message">{state.message}</p>
@@ -139,12 +284,12 @@ export function ViewportPanel({
           </dd>
         </div>
         <div>
-          <dt>Vertex</dt>
-          <dd>{state.snapshot?.diagnostics.shaders[0]?.success ? '성공' : '대기'}</dd>
+          <dt>Mode</dt>
+          <dd>{sceneMode}</dd>
         </div>
         <div>
-          <dt>Fragment</dt>
-          <dd>{state.snapshot?.diagnostics.shaders[1]?.success ? '성공' : '대기'}</dd>
+          <dt>Geometry</dt>
+          <dd>{sceneMode === 'screen' ? 'fullscreen-quad' : geometryId}</dd>
         </div>
         <div>
           <dt>Program</dt>
