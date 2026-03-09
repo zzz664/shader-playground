@@ -10,31 +10,39 @@ export interface RendererStateSnapshot {
   diagnostics: RenderDiagnostics
   viewportWidth: number
   viewportHeight: number
+  compileSucceeded: boolean
 }
 
 export class WebGLQuadRenderer {
   private readonly canvas: HTMLCanvasElement
   private readonly gl: WebGL2RenderingContext
-  private readonly program: WebGLProgram
+  private program: WebGLProgram
   private readonly vao: WebGLVertexArrayObject
   private readonly positionBuffer: WebGLBuffer
-  private readonly resolutionLocation: WebGLUniformLocation | null
-  private readonly timeLocation: WebGLUniformLocation | null
+  private resolutionLocation: WebGLUniformLocation | null
+  private timeLocation: WebGLUniformLocation | null
   private readonly resizeObserver: ResizeObserver
   private animationFrameId: number | null = null
   private startTime = 0
   private viewportWidth = 0
   private viewportHeight = 0
-  private readonly diagnostics: RenderDiagnostics
+  private diagnostics: RenderDiagnostics
+  private compileSucceeded = false
 
-  constructor(canvas: HTMLCanvasElement) {
+  constructor(
+    canvas: HTMLCanvasElement,
+    initialSources: {
+      vertexSource?: string
+      fragmentSource?: string
+    } = {},
+  ) {
     this.canvas = canvas
     this.gl = createWebGL2Context(canvas)
 
     const { program, diagnostics } = createShaderProgram(
       this.gl,
-      defaultVertexShaderSource,
-      defaultFragmentShaderSource,
+      initialSources.vertexSource ?? defaultVertexShaderSource,
+      initialSources.fragmentSource ?? defaultFragmentShaderSource,
     )
 
     this.diagnostics = diagnostics
@@ -44,6 +52,7 @@ export class WebGLQuadRenderer {
     }
 
     this.program = program
+    this.compileSucceeded = true
 
     const vao = this.gl.createVertexArray()
     const positionBuffer = this.gl.createBuffer()
@@ -143,7 +152,26 @@ export class WebGLQuadRenderer {
       diagnostics: this.diagnostics,
       viewportWidth: this.viewportWidth,
       viewportHeight: this.viewportHeight,
+      compileSucceeded: this.compileSucceeded,
     }
+  }
+
+  compileSources(vertexSource: string, fragmentSource: string): RendererStateSnapshot {
+    const { program, diagnostics } = createShaderProgram(this.gl, vertexSource, fragmentSource)
+    this.diagnostics = diagnostics
+
+    if (!program) {
+      this.compileSucceeded = false
+      return this.getSnapshot()
+    }
+
+    this.gl.deleteProgram(this.program)
+    this.program = program
+    this.timeLocation = this.gl.getUniformLocation(this.program, 'uTime')
+    this.resolutionLocation = this.gl.getUniformLocation(this.program, 'uResolution')
+    this.compileSucceeded = true
+
+    return this.getSnapshot()
   }
 
   dispose() {

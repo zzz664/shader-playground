@@ -13,3 +13,10 @@ export interface RenderDiagnostics {
   shaders: ShaderStageDiagnostic[]
   program: ProgramDiagnostic
 }
+
+export interface ParsedDiagnosticLine {
+  stage: 'vertex' | 'fragment' | 'program'
+  line: number | null
+  column: number | null
+  message: string
+}
