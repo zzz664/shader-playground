@@ -14,10 +14,6 @@ function formatProjectStatusMessage(message: string | null) {
     return '대기 중'
   }
 
-  if (/[�\u0080-\u009f]/.test(message) || /[筌遺濡쒖媛硫볪럹뗭븍]/.test(message)) {
-    return '프로젝트 상태가 갱신되었습니다.'
-  }
-
   return message
 }
 

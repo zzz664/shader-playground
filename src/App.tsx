@@ -1,4 +1,4 @@
-import './App.css'
+﻿import './App.css'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { frameModelBounds } from './core/model/framing/frameModelBounds'
 import type { RendererStateSnapshot } from './core/renderer/WebGLQuadRenderer'
@@ -227,7 +227,7 @@ function App() {
       setTextureLoadError(null)
       setModelLoadError(null)
       setLastSavedAt(formatSavedAt(snapshot.savedAt))
-      setProjectStatusMessage(`${sourceLabel} 遺덈윭?ㅺ린瑜??꾨즺?덉뒿?덈떎.`)
+      setProjectStatusMessage(`${sourceLabel} ????? ??????.`)
       projectSignatureRef.current = buildProjectSignature(snapshot)
       setIsProjectDirty(false)
       setIsCompiling(true)
@@ -244,7 +244,7 @@ function App() {
     void (async () => {
       const storedSnapshot = loadStoredProjectSnapshot()
       if (storedSnapshot) {
-        await applyProjectSnapshot(storedSnapshot, '濡쒖뺄 ?꾨줈?앺듃')
+        await applyProjectSnapshot(storedSnapshot, '?? ????')
       }
 
       hasMountedRef.current = true
@@ -279,11 +279,11 @@ function App() {
         saveProjectSnapshot(snapshot)
         projectSignatureRef.current = buildProjectSignature(snapshot)
         setLastSavedAt(formatSavedAt(snapshot.savedAt))
-        setProjectStatusMessage('理쒓렐 ?묒뾽???먮룞 ??ν뻽?듬땲??')
+        setProjectStatusMessage('?? ??? ?? ??????.')
         setIsProjectDirty(false)
       } catch (error) {
         const message =
-          error instanceof Error ? error.message : '?먮룞 ???以??ㅻ쪟媛 諛쒖깮?덉뒿?덈떎.'
+          error instanceof Error ? error.message : '?? ?? ? ??? ??????.'
         setProjectStatusMessage(message)
       }
     }, 500)
@@ -359,9 +359,6 @@ function App() {
       ...snapshot.materialValues,
       ...currentValues,
     }))
-    setSceneMode(snapshot.sceneMode)
-    setGeometryId(snapshot.geometryId)
-    setBlendMode(snapshot.blendMode)
     setIsCompiling(false)
   }
 
@@ -383,7 +380,7 @@ function App() {
         [propertyName]: asset.id,
       }))
     } catch (error) {
-      const message = error instanceof Error ? error.message : '?띿뒪泥섎? 遺덈윭?ㅼ? 紐삵뻽?듬땲??'
+      const message = error instanceof Error ? error.message : '???? ???? ?????.'
       setTextureLoadError(message)
     }
   }
@@ -466,14 +463,14 @@ function App() {
         buildAutoTextureBindings(currentValues, materialProperties, nextTaggedModelAsset),
       )
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'FBX 紐⑤뜽??遺덈윭?ㅼ? 紐삵뻽?듬땲??'
+      const message = error instanceof Error ? error.message : 'FBX ??? ???? ?????.'
       setModelLoadError(message)
     }
   }
 
   const handleDeleteTexture = (assetId: string) => {
     removeTextureAssetsByIds(new Set([assetId]))
-    setProjectStatusMessage('?띿뒪泥??먯궛????젣?섍퀬 李몄“瑜??뺣━?덉뒿?덈떎.')
+    setProjectStatusMessage('??? ??? ???? ??? ??????.')
   }
 
   const handleSaveProject = () => {
@@ -482,11 +479,11 @@ function App() {
       saveProjectSnapshot(snapshot)
       projectSignatureRef.current = buildProjectSignature(snapshot)
       setLastSavedAt(formatSavedAt(snapshot.savedAt))
-      setProjectStatusMessage('?꾨줈?앺듃瑜?濡쒖뺄 ??μ냼????ν뻽?듬땲??')
+      setProjectStatusMessage('????? ?? ???? ??????.')
       setIsProjectDirty(false)
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : '?꾨줈?앺듃 ???以??ㅻ쪟媛 諛쒖깮?덉뒿?덈떎.'
+        error instanceof Error ? error.message : '???? ?? ? ??? ??????.'
       setProjectStatusMessage(message)
     }
   }
@@ -494,11 +491,11 @@ function App() {
   const handleLoadProject = async () => {
     const snapshot = loadStoredProjectSnapshot()
     if (!snapshot) {
-      setProjectStatusMessage('??λ맂 濡쒖뺄 ?꾨줈?앺듃媛 ?놁뒿?덈떎.')
+      setProjectStatusMessage('??? ?? ????? ????.')
       return
     }
 
-    await applyProjectSnapshot(snapshot, '濡쒖뺄 ?꾨줈?앺듃')
+    await applyProjectSnapshot(snapshot, '?? ????')
   }
 
   const handleExportProject = () => {
@@ -510,22 +507,22 @@ function App() {
     link.download = `shader-playground-${Date.now()}.json`
     link.click()
     URL.revokeObjectURL(url)
-    setProjectStatusMessage('?꾨줈?앺듃 JSON ?대낫?닿린瑜??꾨즺?덉뒿?덈떎.')
+    setProjectStatusMessage('???? JSON ????? ??????.')
   }
 
   const handleImportProject = async (file: File) => {
     try {
       const parsedSnapshot = JSON.parse(await file.text()) as ProjectSnapshot
-      await applyProjectSnapshot(parsedSnapshot, 'JSON ?꾨줈?앺듃')
+      await applyProjectSnapshot(parsedSnapshot, 'JSON ????')
     } catch (error) {
-      const message = error instanceof Error ? error.message : '?꾨줈?앺듃 ?뚯씪??遺덈윭?ㅼ? 紐삵뻽?듬땲??'
+      const message = error instanceof Error ? error.message : '???? ??? ???? ?????.'
       setProjectStatusMessage(message)
     }
   }
 
   const handleClearStoredProject = () => {
     clearStoredProjectSnapshot()
-    setProjectStatusMessage('濡쒖뺄 ??λ낯????젣?덉뒿?덈떎.')
+    setProjectStatusMessage('?? ???? ??????.')
     projectSignatureRef.current = ''
     setIsProjectDirty(true)
     setLastSavedAt(null)
@@ -659,3 +656,4 @@ function App() {
 }
 
 export default App
+
