@@ -83,3 +83,44 @@ void main() {
   outColor = vec4(color, 1.0);
 }
 `
+
+export const defaultPostProcessVertexShaderSource = `#version 300 es
+
+precision highp float;
+
+layout(location = 0) in vec3 aPosition;
+layout(location = 2) in vec2 aUv;
+
+out vec2 vUv;
+
+void main() {
+  vUv = aUv;
+  gl_Position = vec4(aPosition.xy, 0.0, 1.0);
+}
+`
+
+export const defaultPostProcessFragmentShaderSource = `#version 300 es
+
+precision highp float;
+
+in vec2 vUv;
+
+uniform sampler2D uSceneColor;
+uniform sampler2D uPrevPassColor;
+uniform vec2 uResolution;
+uniform float uTime;
+
+out vec4 outColor;
+
+void main() {
+  vec2 uv = vUv;
+  vec4 sceneColor = texture(uSceneColor, uv);
+  vec4 prevPassColor = texture(uPrevPassColor, uv);
+  // 이전 pass를 직접 참조하려면 uniform sampler2D uPass1Color; 같은 형태를 선언한다.
+  vec2 centeredUv = uv * 2.0 - 1.0;
+  float vignette = smoothstep(1.25, 0.15, length(centeredUv));
+  vec3 color = mix(sceneColor.rgb, prevPassColor.rgb, 0.85);
+  color *= vignette;
+  outColor = vec4(color, prevPassColor.a);
+}
+`

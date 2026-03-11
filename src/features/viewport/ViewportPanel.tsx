@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -12,6 +13,7 @@ import {
 } from "../../core/renderer/WebGLQuadRenderer";
 import type { MaterialPropertyValue } from "../../shared/types/materialProperty";
 import type { ModelAsset } from "../../shared/types/modelAsset";
+import type { PostProcessPass } from "../../shared/types/postProcess";
 import type {
   BlendPreset,
   BlendPresetState,
@@ -32,16 +34,18 @@ interface ViewportPanelState {
 interface ViewportPanelProps {
   vertexSource: string;
   fragmentSource: string;
+  postProcessSource: string;
+  postProcessPasses: PostProcessPass[];
   materialValues: Record<string, MaterialPropertyValue>;
   textureAssets: TextureAsset[];
   sceneMode: SceneMode;
   geometryId: GeometryPreviewId;
   blendPresetState: BlendPresetState;
+  postProcessEnabled: boolean;
   resolutionScale: ResolutionScale;
   cameraState: ViewportCameraState;
   modelTransform: ModelTransformState;
   modelAsset: ModelAsset | null;
-  modelLoadError: string | null;
   compileRequest: {
     token: number;
     mode: "auto" | "manual";
@@ -52,11 +56,10 @@ interface ViewportPanelProps {
     blendAxis: "src" | "dst",
     blendPreset: BlendPreset,
   ) => void;
+  onPostProcessEnabledChange: (enabled: boolean) => void;
   onResolutionScaleChange: (resolutionScale: ResolutionScale) => void;
   onCameraChange: (cameraState: ViewportCameraState) => void;
   onModelTransformChange: (modelTransform: ModelTransformState) => void;
-  onModelUpload: (files: File[]) => Promise<void>;
-  onModelClear: () => void;
   onCompileResult: (
     snapshot: RendererStateSnapshot,
     compileMode: "initial" | "auto" | "manual",
@@ -72,24 +75,25 @@ const geometryOptions: Array<{ value: GeometryPreviewId; label: string }> = [
 export function ViewportPanel({
   vertexSource,
   fragmentSource,
+  postProcessSource,
+  postProcessPasses,
   materialValues,
   textureAssets,
   sceneMode,
   geometryId,
   blendPresetState,
+  postProcessEnabled,
   resolutionScale,
   cameraState,
   modelTransform,
   modelAsset,
-  modelLoadError,
   compileRequest,
   onSceneModeChange,
   onGeometryChange,
   onBlendPresetChange,
+  onPostProcessEnabledChange,
   onResolutionScaleChange,
   onCameraChange,
-  onModelUpload,
-  onModelClear,
   onCompileResult,
 }: ViewportPanelProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -107,16 +111,18 @@ export function ViewportPanel({
   const initialSourcesRef = useRef({
     vertexSource,
     fragmentSource,
+    postProcessSource,
+    postProcessPasses,
   });
   const initialPreviewRef = useRef({
     sceneMode,
     geometryId,
     blendPresetState,
+    postProcessEnabled,
     resolutionScale,
     cameraState,
     modelTransform,
   });
-  const [isUploadingModel, setIsUploadingModel] = useState(false);
   const [isPageVisible, setIsPageVisible] = useState(
     document.visibilityState === "visible",
   );
@@ -127,7 +133,7 @@ export function ViewportPanel({
     snapshot: null,
   });
 
-  const syncSnapshotState = () => {
+  const syncSnapshotState = useCallback(() => {
     const snapshot = rendererRef.current?.getSnapshot() ?? null;
     if (!snapshot) {
       return;
@@ -137,7 +143,13 @@ export function ViewportPanel({
       ...currentState,
       snapshot,
     }));
-  };
+  }, []);
+
+  const scheduleSnapshotStateSync = useCallback(() => {
+    window.requestAnimationFrame(() => {
+      syncSnapshotState();
+    });
+  }, [syncSnapshotState]);
 
   useEffect(() => {
     onCompileResultRef.current = onCompileResult;
@@ -155,11 +167,16 @@ export function ViewportPanel({
       renderer = new WebGLQuadRenderer(canvas, {
         vertexSource: initialSourcesRef.current.vertexSource,
         fragmentSource: initialSourcesRef.current.fragmentSource,
+        postProcessSource: initialSourcesRef.current.postProcessSource,
+        postProcessPasses: initialSourcesRef.current.postProcessPasses,
       });
       renderer.updateSceneMode(initialPreviewRef.current.sceneMode);
       renderer.updateGeometry(initialPreviewRef.current.geometryId);
       renderer.updateBlendPresetState(
         initialPreviewRef.current.blendPresetState,
+      );
+      renderer.updatePostProcessEnabled(
+        initialPreviewRef.current.postProcessEnabled,
       );
       renderer.updateResolutionScale(initialPreviewRef.current.resolutionScale);
       renderer.updateCameraState(initialPreviewRef.current.cameraState);
@@ -200,7 +217,11 @@ export function ViewportPanel({
     }
 
     compileTokenRef.current = compileRequest.token;
-    const snapshot = renderer.compileSources(vertexSource, fragmentSource);
+    const snapshot = renderer.compileSources(
+      vertexSource,
+      fragmentSource,
+      postProcessPasses,
+    );
     setState((currentState) => ({
       ...currentState,
       snapshot,
@@ -209,7 +230,17 @@ export function ViewportPanel({
         : "컴파일에 실패해 마지막 성공 렌더 결과를 유지합니다.",
     }));
     onCompileResultRef.current(snapshot, compileRequest.mode);
-  }, [compileRequest.mode, compileRequest.token, fragmentSource, vertexSource]);
+  }, [
+    compileRequest.mode,
+    compileRequest.token,
+    fragmentSource,
+    postProcessPasses,
+    vertexSource,
+  ]);
+
+  useEffect(() => {
+    rendererRef.current?.updatePostProcessPasses(postProcessPasses);
+  }, [postProcessPasses]);
 
   useEffect(() => {
     rendererRef.current?.updateMaterialValues(materialValues);
@@ -221,23 +252,28 @@ export function ViewportPanel({
 
   useEffect(() => {
     rendererRef.current?.updateSceneMode(sceneMode);
-    syncSnapshotState();
-  }, [sceneMode]);
+    scheduleSnapshotStateSync();
+  }, [sceneMode, scheduleSnapshotStateSync]);
 
   useEffect(() => {
     rendererRef.current?.updateGeometry(geometryId);
-    syncSnapshotState();
-  }, [geometryId]);
+    scheduleSnapshotStateSync();
+  }, [geometryId, scheduleSnapshotStateSync]);
 
   useEffect(() => {
     rendererRef.current?.updateBlendPresetState(blendPresetState);
-    syncSnapshotState();
-  }, [blendPresetState]);
+    scheduleSnapshotStateSync();
+  }, [blendPresetState, scheduleSnapshotStateSync]);
+
+  useEffect(() => {
+    rendererRef.current?.updatePostProcessEnabled(postProcessEnabled);
+    scheduleSnapshotStateSync();
+  }, [postProcessEnabled, scheduleSnapshotStateSync]);
 
   useEffect(() => {
     rendererRef.current?.updateResolutionScale(resolutionScale);
-    syncSnapshotState();
-  }, [resolutionScale]);
+    scheduleSnapshotStateSync();
+  }, [resolutionScale, scheduleSnapshotStateSync]);
 
   useEffect(() => {
     rendererRef.current?.updateCameraState(cameraState);
@@ -266,7 +302,7 @@ export function ViewportPanel({
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, []);
+  }, [syncSnapshotState]);
 
   useEffect(() => {
     const handlePageHide = () => {
@@ -289,14 +325,16 @@ export function ViewportPanel({
 
   useEffect(() => {
     rendererRef.current?.updateModelAsset(modelAsset);
-    syncSnapshotState();
-    setState((currentState) => ({
-      ...currentState,
-      message: modelAsset
-        ? `${modelAsset.name} 모델을 현재 뷰포트에 반영했습니다.`
-        : currentState.message,
-    }));
-  }, [modelAsset]);
+    window.requestAnimationFrame(() => {
+      syncSnapshotState();
+      setState((currentState) => ({
+        ...currentState,
+        message: modelAsset
+          ? `${modelAsset.name} 모델이 현재 뷰포트에 반영되었습니다.`
+          : currentState.message,
+      }));
+    });
+  }, [modelAsset, syncSnapshotState]);
 
   const handleCameraAxisChange =
     (key: keyof ViewportCameraState) =>
@@ -317,23 +355,6 @@ export function ViewportPanel({
       pitch: 0.45,
       distance: framedDistance,
     });
-  };
-
-  const handleModelFileChange = async (
-    event: ChangeEvent<HTMLInputElement>,
-  ) => {
-    const nextFiles = event.target.files ? Array.from(event.target.files) : [];
-    if (nextFiles.length === 0) {
-      return;
-    }
-
-    setIsUploadingModel(true);
-    try {
-      await onModelUpload(nextFiles);
-    } finally {
-      setIsUploadingModel(false);
-      event.target.value = "";
-    }
   };
 
   const handleViewportKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -468,85 +489,6 @@ export function ViewportPanel({
         <p className="panel__eyebrow">Viewport</p>
       </div>
 
-      <div className="model-upload-card">
-        <div className="model-upload-card__header">
-          <strong>FBX Import</strong>
-          {modelAsset ? (
-            <button
-              type="button"
-              className="viewport-controls__reset"
-              onClick={onModelClear}
-            >
-              Clear
-            </button>
-          ) : null}
-        </div>
-
-        <label className="texture-slot">
-          <span>
-            {isUploadingModel
-              ? "FBX를 불러오는 중입니다."
-              : "FBX와 관련 텍스처를 업로드"}
-          </span>
-          <input
-            type="file"
-            accept=".fbx,image/png,image/jpeg,image/webp"
-            multiple
-            onChange={handleModelFileChange}
-            disabled={isUploadingModel}
-          />
-        </label>
-
-        {modelAsset ? (
-          <dl className="model-upload-card__facts">
-            <div>
-              <dt>파일</dt>
-              <dd>{modelAsset.name}</dd>
-            </div>
-            <div>
-              <dt>메시</dt>
-              <dd>{modelAsset.meshCount}</dd>
-            </div>
-            <div>
-              <dt>정점</dt>
-              <dd>{modelAsset.vertices.length / 8}</dd>
-            </div>
-            <div>
-              <dt>삼각형</dt>
-              <dd>{Math.floor(modelAsset.indices.length / 3)}</dd>
-            </div>
-            <div>
-              <dt>재질</dt>
-              <dd>{modelAsset.materialNames.length}</dd>
-            </div>
-            <div>
-              <dt>텍스처</dt>
-              <dd>{modelAsset.textureAssets.length}</dd>
-            </div>
-            <div>
-              <dt>반경</dt>
-              <dd>{modelAsset.bounds.radius.toFixed(2)}</dd>
-            </div>
-          </dl>
-        ) : (
-          <p className="model-upload-card__empty">
-            업로드한 FBX가 없으면 기본 geometry preview를 사용합니다.
-          </p>
-        )}
-
-        {modelAsset?.warningMessages.length ? (
-          <ul className="model-upload-card__warnings">
-            {modelAsset.warningMessages.map((warningMessage) => (
-              <li key={warningMessage}>{warningMessage}</li>
-            ))}
-          </ul>
-        ) : null}
-
-        {modelLoadError ? (
-          <p className="model-upload-card__error">{modelLoadError}</p>
-        ) : null}
-      </div>
-
       <div className="viewport-toolbar">
         <div className="viewport-toolbar__group">
           <button
@@ -607,6 +549,19 @@ export function ViewportPanel({
             <option value="opaque">Opaque</option>
             <option value="alpha">Alpha</option>
             <option value="additive">Additive</option>
+          </select>
+        </label>
+
+        <label className="viewport-toolbar__select">
+          <span>Post</span>
+          <select
+            value={postProcessEnabled ? "on" : "off"}
+            onChange={(event) =>
+              onPostProcessEnabledChange(event.target.value === "on")
+            }
+          >
+            <option value="on">On</option>
+            <option value="off">Off</option>
           </select>
         </label>
 
@@ -698,38 +653,10 @@ export function ViewportPanel({
 
       <dl className="viewport-panel__facts">
         <div>
-          <dt>해상도</dt>
-          <dd>
-            {state.snapshot
-              ? `${state.snapshot.viewportWidth} x ${state.snapshot.viewportHeight}`
-              : "-"}
-          </dd>
-        </div>
-        <div>
-          <dt>Mode</dt>
-          <dd>{sceneMode}</dd>
-        </div>
-        <div>
-          <dt>Blend</dt>
-          <dd>{`${blendPresetState.src} / ${blendPresetState.dst}`}</dd>
-        </div>
-        <div>
-          <dt>Scale</dt>
-          <dd>{Math.round(resolutionScale * 100)}%</dd>
-        </div>
-        <div>
-          <dt>Geometry</dt>
-          <dd>
-            {modelAsset
-              ? "fbx-mesh"
-              : sceneMode === "screen"
-                ? "fullscreen-quad"
-                : geometryId}
-          </dd>
-        </div>
-        <div>
           <dt>Program</dt>
-          <dd>{state.snapshot?.diagnostics.program.success ? "링크 성공" : "실패 유지"}</dd>
+          <dd>
+            {state.snapshot?.diagnostics.program.success ? "링크 성공" : "실패 유지"}
+          </dd>
         </div>
         <div>
           <dt>Tab</dt>

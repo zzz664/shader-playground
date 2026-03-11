@@ -2,11 +2,10 @@
   font-family: "Segoe UI", "Noto Sans KR", sans-serif;
   line-height: 1.5;
   font-weight: 400;
-  color: #e2e8f0;
+  color: #d4d4d8;
   background:
-    radial-gradient(circle at top left, rgba(245, 158, 11, 0.18), transparent 28%),
-    radial-gradient(circle at top right, rgba(14, 165, 233, 0.16), transparent 30%),
-    linear-gradient(180deg, #020617 0%, #111827 100%);
+    radial-gradient(circle at top left, rgba(245, 158, 11, 0.08), transparent 24%),
+    linear-gradient(180deg, #101012 0%, #1a1a1d 100%);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -21,6 +20,7 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  background: #111114;
 }
 
 body,
@@ -33,6 +33,7 @@ select {
 
 #root {
   min-height: 100vh;
+  zoom: 0.8;
 }
 
 a {

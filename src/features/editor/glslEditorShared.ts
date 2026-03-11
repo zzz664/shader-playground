@@ -1,4 +1,4 @@
-export type ShaderEditorStage = 'vertex' | 'fragment'
+export type ShaderEditorStage = 'vertex' | 'fragment' | 'post'
 
 export interface StageSnippetSeed {
   label: string
@@ -25,7 +25,18 @@ export const commonKeywords = [
   'layout',
 ]
 
-export const commonTypes = ['void', 'bool', 'int', 'float', 'vec2', 'vec3', 'vec4', 'mat3', 'mat4', 'sampler2D']
+export const commonTypes = [
+  'void',
+  'bool',
+  'int',
+  'float',
+  'vec2',
+  'vec3',
+  'vec4',
+  'mat3',
+  'mat4',
+  'sampler2D',
+]
 
 export const commonBuiltins = [
   'sin',
@@ -46,7 +57,20 @@ export const commonBuiltins = [
   'texture',
 ]
 
-export const builtinUniforms = ['uTime', 'uResolution', 'uMouse', 'uModel', 'uView', 'uProj', 'uCameraPos', 'uSceneMode']
+export const builtinUniforms = [
+  'uTime',
+  'uResolution',
+  'uMouse',
+  'uModel',
+  'uView',
+  'uProj',
+  'uCameraPos',
+  'uSceneMode',
+  'uSceneColor',
+  'uPrevPassColor',
+  'uPass1Color',
+  'uPass2Color',
+]
 
 export const commonVariables = ['vUv', 'vNormal', 'vWorldPosition', 'outColor']
 
@@ -65,6 +89,38 @@ export function getStageSnippetSeeds(stage: ShaderEditorStage): StageSnippetSeed
           '  gl_Position = uProj * uView * worldPosition;',
           '}',
         ].join('\n'),
+      },
+    ]
+  }
+
+  if (stage === 'post') {
+    return [
+      {
+        label: 'post-main',
+        detail: '기본 post process main 템플릿',
+        insertText: [
+          'void main() {',
+          '  vec4 sceneColor = texture(uSceneColor, vUv);',
+          '  vec4 prevPassColor = texture(uPrevPassColor, vUv);',
+          '  vec3 color = mix(sceneColor.rgb, prevPassColor.rgb, 0.85);',
+          '  outColor = vec4(color, prevPassColor.a);',
+          '}',
+        ].join('\n'),
+      },
+      {
+        label: 'scene-sample',
+        detail: 'scene color texture 샘플링',
+        insertText: 'texture(uSceneColor, vUv)',
+      },
+      {
+        label: 'prev-pass-sample',
+        detail: 'previous pass color texture 샘플링',
+        insertText: 'texture(uPrevPassColor, vUv)',
+      },
+      {
+        label: 'specific-pass-sample',
+        detail: '특정 pass color texture 샘플링 예시',
+        insertText: 'texture(uPass1Color, vUv)',
       },
     ]
   }

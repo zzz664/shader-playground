@@ -14,6 +14,8 @@ export const defaultBlendPresetState: BlendPresetState = {
   dst: 'opaque',
 }
 
+export const defaultPostProcessEnabled = true
+
 export type ResolutionScale = 0.5 | 0.75 | 1
 
 export interface ViewportCameraState {

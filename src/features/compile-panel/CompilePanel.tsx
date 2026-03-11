@@ -3,17 +3,20 @@ interface CompilePanelProps {
   isCompiling: boolean
   lastCompileMode: 'manual' | 'auto' | 'initial'
   lastCompileSucceeded: boolean
-  errorCount: number
   onCompile: () => void
   onToggleAutoCompile: (nextValue: boolean) => void
 }
 
-function formatCompileMode(mode: 'manual' | 'auto' | 'initial') {
+function formatCompileResult(
+  mode: 'manual' | 'auto' | 'initial',
+  succeeded: boolean,
+) {
   if (mode === 'initial') {
-    return '초기 상태'
+    return succeeded ? '초기 컴파일 완료' : '초기 컴파일 실패'
   }
 
-  return mode === 'auto' ? '자동' : '수동'
+  const modeLabel = mode === 'auto' ? '자동' : '수동'
+  return `${modeLabel} 컴파일 ${succeeded ? '성공' : '실패'}`
 }
 
 export function CompilePanel({
@@ -21,7 +24,6 @@ export function CompilePanel({
   isCompiling,
   lastCompileMode,
   lastCompileSucceeded,
-  errorCount,
   onCompile,
   onToggleAutoCompile,
 }: CompilePanelProps) {
@@ -29,7 +31,12 @@ export function CompilePanel({
     <section className="compile-panel">
       <div className="compile-panel__header">
         <p className="panel__eyebrow">Compile</p>
-        <button className="compile-panel__button" type="button" onClick={onCompile} disabled={isCompiling}>
+        <button
+          className="compile-panel__button"
+          type="button"
+          onClick={onCompile}
+          disabled={isCompiling}
+        >
           {isCompiling ? '컴파일 중...' : 'Compile'}
         </button>
       </div>
@@ -45,20 +52,11 @@ export function CompilePanel({
         <span>Auto Compile</span>
       </label>
 
-      <dl className="compile-panel__facts">
-        <div>
-          <dt>마지막 실행</dt>
-          <dd>{formatCompileMode(lastCompileMode)}</dd>
-        </div>
-        <div>
-          <dt>결과</dt>
-          <dd>{lastCompileSucceeded ? '성공' : '실패'}</dd>
-        </div>
-        <div>
-          <dt>오류 수</dt>
-          <dd>{errorCount}</dd>
-        </div>
-      </dl>
+      <p className="compile-panel__result">
+        {isCompiling
+          ? '컴파일 중...'
+          : formatCompileResult(lastCompileMode, lastCompileSucceeded)}
+      </p>
     </section>
   )
 }

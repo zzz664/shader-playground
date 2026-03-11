@@ -1,5 +1,19 @@
+import { defaultPostProcessFragmentShaderSource } from '../../core/shader/templates/defaultShaders'
+import {
+  createDefaultPostProcessPass,
+  defaultPostProcessChainState,
+} from '../types/postProcess'
+import {
+  defaultBlendPresetState,
+  defaultModelTransformState,
+  defaultPostProcessEnabled,
+} from '../types/scenePreview'
 import type { ModelAsset } from '../types/modelAsset'
-import type { ProjectSnapshot, SerializedModelAsset } from '../types/projectSnapshot'
+import type {
+  NormalizedProjectSnapshot,
+  ProjectSnapshot,
+  SerializedModelAsset,
+} from '../types/projectSnapshot'
 import type { TextureAsset } from '../types/textureAsset'
 
 export const PROJECT_STORAGE_KEY = 'shader-playground.project.v1'
@@ -51,8 +65,47 @@ export function restoreModelAsset(
   }
 }
 
+export function normalizeProjectSnapshot(
+  snapshot: ProjectSnapshot,
+): NormalizedProjectSnapshot {
+  const normalizedPostProcessPasses =
+    snapshot.postProcessPasses && snapshot.postProcessPasses.length > 0
+      ? snapshot.postProcessPasses.map((pass, index) =>
+          createDefaultPostProcessPass({
+            id: pass.id || `post-pass-${index + 1}`,
+            name: pass.name || `Pass ${index + 1}`,
+            enabled: pass.enabled ?? true,
+            source: pass.source ?? defaultPostProcessFragmentShaderSource,
+          }),
+        )
+      : [
+          createDefaultPostProcessPass({
+            source: snapshot.postProcessSource ?? defaultPostProcessFragmentShaderSource,
+          }),
+        ]
+
+  const normalizedPostProcessSource =
+    normalizedPostProcessPasses[0]?.source ?? defaultPostProcessFragmentShaderSource
+  const normalizedActivePostProcessPassId =
+    normalizedPostProcessPasses.some((pass) => pass.id === snapshot.activePostProcessPassId)
+      ? snapshot.activePostProcessPassId ?? normalizedPostProcessPasses[0]?.id ?? null
+      : normalizedPostProcessPasses[0]?.id ?? null
+
+  return {
+    ...snapshot,
+    postProcessSource: normalizedPostProcessSource,
+    postProcessPasses: normalizedPostProcessPasses,
+    activePostProcessPassId: normalizedActivePostProcessPassId,
+    postProcessEnabled:
+      snapshot.postProcessEnabled ?? defaultPostProcessChainState.enabled ?? defaultPostProcessEnabled,
+    blendPresetState: snapshot.blendPresetState ?? defaultBlendPresetState,
+    modelTransform: snapshot.modelTransform ?? defaultModelTransformState,
+  }
+}
+
 export function saveProjectSnapshot(snapshot: ProjectSnapshot) {
-  localStorage.setItem(PROJECT_STORAGE_KEY, JSON.stringify(snapshot))
+  const normalizedSnapshot = normalizeProjectSnapshot(snapshot)
+  localStorage.setItem(PROJECT_STORAGE_KEY, JSON.stringify(normalizedSnapshot))
 }
 
 export function loadStoredProjectSnapshot() {
@@ -61,7 +114,7 @@ export function loadStoredProjectSnapshot() {
     return null
   }
 
-  return JSON.parse(rawValue) as ProjectSnapshot
+  return normalizeProjectSnapshot(JSON.parse(rawValue) as ProjectSnapshot)
 }
 
 export function clearStoredProjectSnapshot() {

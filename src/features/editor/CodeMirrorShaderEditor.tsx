@@ -1,7 +1,13 @@
 import { autocompletion, closeBrackets, startCompletion } from '@codemirror/autocomplete'
 import { history, historyKeymap, indentWithTab } from '@codemirror/commands'
 import { cppLanguage } from '@codemirror/lang-cpp'
-import { bracketMatching, defaultHighlightStyle, HighlightStyle, syntaxHighlighting } from '@codemirror/language'
+import {
+  bracketMatching,
+  defaultHighlightStyle,
+  HighlightStyle,
+  syntaxHighlighting,
+} from '@codemirror/language'
+import type { Diagnostic } from '@codemirror/lint'
 import { lintGutter, setDiagnostics } from '@codemirror/lint'
 import { Compartment, EditorState, RangeSetBuilder } from '@codemirror/state'
 import {
@@ -13,11 +19,11 @@ import {
   lineNumbers,
   placeholder,
   ViewPlugin,
-  ViewUpdate,
+  type ViewUpdate,
 } from '@codemirror/view'
 import { tags } from '@lezer/highlight'
 import { useEffect, useMemo, useRef, type ReactNode } from 'react'
-import type { Diagnostic } from '@codemirror/lint'
+import type { PostProcessPass } from '../../shared/types/postProcess'
 import type { ParsedDiagnosticLine } from '../../shared/types/renderDiagnostics'
 import type { DiagnosticFocusTarget } from './ShaderEditorPanel'
 import {
@@ -34,13 +40,23 @@ interface CodeMirrorShaderEditorProps {
   activeStage: ShaderEditorStage
   vertexSource: string
   fragmentSource: string
+  postProcessSource: string
+  postProcessPasses: PostProcessPass[]
+  activePostProcessPassId: string | null
   vertexDiagnostics: ParsedDiagnosticLine[]
   fragmentDiagnostics: ParsedDiagnosticLine[]
+  postDiagnostics: ParsedDiagnosticLine[]
   focusTarget: DiagnosticFocusTarget | null
   presetSlot?: ReactNode
   onStageChange: (stage: ShaderEditorStage) => void
   onVertexChange: (nextValue: string) => void
   onFragmentChange: (nextValue: string) => void
+  onPostProcessChange: (nextValue: string) => void
+  onActivePostProcessPassChange: (passId: string) => void
+  onAddPostProcessPass: () => void
+  onRemovePostProcessPass: (passId: string) => void
+  onRenamePostProcessPass: (passId: string, name: string) => void
+  onMovePostProcessPass: (passId: string, direction: 'up' | 'down') => void
 }
 
 const languageCompartment = new Compartment()
@@ -64,7 +80,9 @@ function createCompletionItems(stage: ShaderEditorStage) {
   const stageVariables =
     stage === 'vertex'
       ? ['aPosition', 'aNormal', 'aUv']
-      : ['vUv', 'vNormal', 'vWorldPosition', 'outColor']
+      : stage === 'fragment'
+        ? ['vUv', 'vNormal', 'vWorldPosition', 'outColor']
+        : ['vUv', 'uSceneColor', 'uPrevPassColor', 'uResolution', 'uTime', 'outColor']
 
   return [
     ...commonKeywords.map((label) => ({ label, type: 'keyword' as const })),
@@ -176,7 +194,10 @@ function toCodeMirrorDiagnostics(lines: ParsedDiagnosticLine[], state: EditorSta
       const lineNumber = Math.min(line.line ?? 1, state.doc.lines)
       const lineInfo = state.doc.line(lineNumber)
       const from = Math.min(lineInfo.from + Math.max((line.column ?? 1) - 1, 0), lineInfo.to)
-      const to = Math.min(Math.max(from + 1, lineInfo.from + 1), Math.max(lineInfo.to, from + 1))
+      const to = Math.min(
+        Math.max(from + 1, lineInfo.from + 1),
+        Math.max(lineInfo.to, from + 1),
+      )
 
       return {
         from,
@@ -188,49 +209,107 @@ function toCodeMirrorDiagnostics(lines: ParsedDiagnosticLine[], state: EditorSta
 }
 
 function getStagePlaceholder(stage: ShaderEditorStage) {
-  return stage === 'vertex' ? 'vertex shader를 입력하세요.' : 'fragment shader를 입력하세요.'
+  if (stage === 'vertex') {
+    return 'vertex shader를 입력하세요.'
+  }
+
+  if (stage === 'fragment') {
+    return 'fragment shader를 입력하세요.'
+  }
+
+  return 'post process shader를 입력하세요.'
 }
 
 function getStageDiagnostics(
   stage: ShaderEditorStage,
   vertexDiagnostics: ParsedDiagnosticLine[],
   fragmentDiagnostics: ParsedDiagnosticLine[],
+  postDiagnostics: ParsedDiagnosticLine[],
 ) {
-  return stage === 'vertex' ? vertexDiagnostics : fragmentDiagnostics
+  if (stage === 'vertex') {
+    return vertexDiagnostics
+  }
+
+  if (stage === 'fragment') {
+    return fragmentDiagnostics
+  }
+
+  return postDiagnostics
 }
 
-function getStageSource(stage: ShaderEditorStage, vertexSource: string, fragmentSource: string) {
-  return stage === 'vertex' ? vertexSource : fragmentSource
+function getStageSource(
+  stage: ShaderEditorStage,
+  vertexSource: string,
+  fragmentSource: string,
+  postProcessSource: string,
+) {
+  if (stage === 'vertex') {
+    return vertexSource
+  }
+
+  if (stage === 'fragment') {
+    return fragmentSource
+  }
+
+  return postProcessSource
 }
 
 export default function CodeMirrorShaderEditor({
   activeStage,
   vertexSource,
   fragmentSource,
+  postProcessSource,
+  postProcessPasses,
+  activePostProcessPassId,
   vertexDiagnostics,
   fragmentDiagnostics,
+  postDiagnostics,
   focusTarget,
   presetSlot,
   onStageChange,
   onVertexChange,
   onFragmentChange,
+  onPostProcessChange,
+  onActivePostProcessPassChange,
+  onAddPostProcessPass,
+  onRemovePostProcessPass,
+  onRenamePostProcessPass,
+  onMovePostProcessPass,
 }: CodeMirrorShaderEditorProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const editorViewRef = useRef<EditorView | null>(null)
-  const lastValueRef = useRef(getStageSource(activeStage, vertexSource, fragmentSource))
   const currentStageRef = useRef<ShaderEditorStage>(activeStage)
   const currentDiagnosticsRef = useRef<ParsedDiagnosticLine[]>([])
   const suppressChangeRef = useRef(false)
   const onVertexChangeRef = useRef(onVertexChange)
   const onFragmentChangeRef = useRef(onFragmentChange)
+  const onPostProcessChangeRef = useRef(onPostProcessChange)
   const initialStageRef = useRef(activeStage)
 
-  const currentSource = getStageSource(activeStage, vertexSource, fragmentSource)
+  const currentSource = getStageSource(
+    activeStage,
+    vertexSource,
+    fragmentSource,
+    postProcessSource,
+  )
   const currentDiagnostics = useMemo(
-    () => getStageDiagnostics(activeStage, vertexDiagnostics, fragmentDiagnostics),
-    [activeStage, fragmentDiagnostics, vertexDiagnostics],
+    () =>
+      getStageDiagnostics(
+        activeStage,
+        vertexDiagnostics,
+        fragmentDiagnostics,
+        postDiagnostics,
+      ),
+    [activeStage, fragmentDiagnostics, postDiagnostics, vertexDiagnostics],
   )
   const currentDiagnosticCount = currentDiagnostics.length
+  const activePostProcessPass = useMemo(
+    () =>
+      postProcessPasses.find((pass) => pass.id === activePostProcessPassId) ??
+      postProcessPasses[0] ??
+      null,
+    [activePostProcessPassId, postProcessPasses],
+  )
   const initialSourceRef = useRef(currentSource)
   const initialDiagnosticsRef = useRef(currentDiagnostics)
 
@@ -249,6 +328,10 @@ export default function CodeMirrorShaderEditor({
   useEffect(() => {
     onFragmentChangeRef.current = onFragmentChange
   }, [onFragmentChange])
+
+  useEffect(() => {
+    onPostProcessChangeRef.current = onPostProcessChange
+  }, [onPostProcessChange])
 
   useEffect(() => {
     const container = containerRef.current
@@ -289,24 +372,33 @@ export default function CodeMirrorShaderEditor({
             }
 
             const nextValue = update.state.doc.toString()
-            lastValueRef.current = nextValue
 
             if (currentStageRef.current === 'vertex') {
               onVertexChangeRef.current(nextValue)
               return
             }
 
-            onFragmentChangeRef.current(nextValue)
+            if (currentStageRef.current === 'fragment') {
+              onFragmentChangeRef.current(nextValue)
+              return
+            }
+
+            onPostProcessChangeRef.current(nextValue)
           }),
           EditorView.domEventHandlers({
-            mousedown: (_event, viewInstance) => {
-              const position = viewInstance.posAtCoords({ x: _event.clientX, y: _event.clientY })
+            mousedown: (event, viewInstance) => {
+              const position = viewInstance.posAtCoords({
+                x: event.clientX,
+                y: event.clientY,
+              })
               if (position === null) {
                 return false
               }
 
               const clickedLine = viewInstance.state.doc.lineAt(position).number
-              const matchedDiagnostic = currentDiagnosticsRef.current.find((line) => line.line === clickedLine)
+              const matchedDiagnostic = currentDiagnosticsRef.current.find(
+                (line) => line.line === clickedLine,
+              )
 
               if (!matchedDiagnostic) {
                 return false
@@ -368,7 +460,10 @@ export default function CodeMirrorShaderEditor({
 
     editorViewRef.current = view
     view.dispatch(
-      setDiagnostics(view.state, toCodeMirrorDiagnostics(initialDiagnosticsRef.current, view.state)),
+      setDiagnostics(
+        view.state,
+        toCodeMirrorDiagnostics(initialDiagnosticsRef.current, view.state),
+      ),
     )
 
     return () => {
@@ -399,11 +494,15 @@ export default function CodeMirrorShaderEditor({
 
     view.dispatch({
       effects: [
-        diagnosticsDecorationCompartment.reconfigure(createLineDecorationExtension(currentDiagnostics)),
+        diagnosticsDecorationCompartment.reconfigure(
+          createLineDecorationExtension(currentDiagnostics),
+        ),
       ],
     })
 
-    view.dispatch(setDiagnostics(view.state, toCodeMirrorDiagnostics(currentDiagnostics, view.state)))
+    view.dispatch(
+      setDiagnostics(view.state, toCodeMirrorDiagnostics(currentDiagnostics, view.state)),
+    )
   }, [currentDiagnostics])
 
   useEffect(() => {
@@ -413,28 +512,37 @@ export default function CodeMirrorShaderEditor({
     }
 
     const currentDocument = view.state.doc.toString()
-    if (currentSource !== currentDocument) {
-      const currentSelection = view.state.selection.main
-      suppressChangeRef.current = true
-      view.dispatch({
-        changes: {
-          from: 0,
-          to: view.state.doc.length,
-          insert: currentSource,
-        },
-        selection: {
-          anchor: Math.min(currentSelection.anchor, currentSource.length),
-          head: Math.min(currentSelection.head, currentSource.length),
-        },
-      })
-      lastValueRef.current = currentSource
-      suppressChangeRef.current = false
+    if (currentSource === currentDocument) {
+      return
     }
+
+    const currentSelection = view.state.selection.main
+    suppressChangeRef.current = true
+    view.dispatch({
+      changes: {
+        from: 0,
+        to: view.state.doc.length,
+        insert: currentSource,
+      },
+      selection: {
+        anchor: Math.min(currentSelection.anchor, currentSource.length),
+        head: Math.min(currentSelection.head, currentSource.length),
+      },
+    })
+    suppressChangeRef.current = false
   }, [currentSource])
 
   useEffect(() => {
     const view = editorViewRef.current
     if (!view || !focusTarget || focusTarget.stage !== activeStage) {
+      return
+    }
+
+    if (
+      focusTarget.stage === 'post' &&
+      focusTarget.passId &&
+      focusTarget.passId !== activePostProcessPassId
+    ) {
       return
     }
 
@@ -448,7 +556,7 @@ export default function CodeMirrorShaderEditor({
       effects: EditorView.scrollIntoView(anchor, { y: 'center' }),
     })
     view.focus()
-  }, [activeStage, focusTarget])
+  }, [activePostProcessPassId, activeStage, focusTarget])
 
   return (
     <section className="editor-panel">
@@ -473,16 +581,88 @@ export default function CodeMirrorShaderEditor({
           >
             fragmentShader
           </button>
+          <button
+            type="button"
+            className={`editor-panel__tab ${activeStage === 'post' ? 'editor-panel__tab--active' : ''}`}
+            onClick={() => onStageChange('post')}
+          >
+            postProcess
+          </button>
         </div>
 
         {presetSlot ? <div className="editor-panel__preset-slot">{presetSlot}</div> : null}
       </div>
 
+      {activeStage === 'post' ? (
+        <div className="editor-panel__post-pass-manager">
+          <div className="editor-panel__post-pass-list">
+            {postProcessPasses.map((pass) => (
+              <button
+                key={pass.id}
+                type="button"
+                className={`editor-panel__post-pass-chip ${activePostProcessPass?.id === pass.id ? 'editor-panel__post-pass-chip--active' : ''}`}
+                onClick={() => onActivePostProcessPassChange(pass.id)}
+              >
+                {pass.name}
+              </button>
+            ))}
+            <button
+              type="button"
+              className="editor-panel__post-pass-add"
+              onClick={onAddPostProcessPass}
+            >
+              + Pass
+            </button>
+          </div>
+
+          {activePostProcessPass ? (
+            <div className="editor-panel__post-pass-controls">
+              <input
+                type="text"
+                className="editor-panel__post-pass-name"
+                value={activePostProcessPass.name}
+                onChange={(event) =>
+                  onRenamePostProcessPass(activePostProcessPass.id, event.target.value)
+                }
+                placeholder="Pass 이름"
+              />
+              <button
+                type="button"
+                className="editor-panel__post-pass-button"
+                onClick={() => onMovePostProcessPass(activePostProcessPass.id, 'up')}
+              >
+                위로
+              </button>
+              <button
+                type="button"
+                className="editor-panel__post-pass-button"
+                onClick={() => onMovePostProcessPass(activePostProcessPass.id, 'down')}
+              >
+                아래로
+              </button>
+              <button
+                type="button"
+                className="editor-panel__post-pass-button editor-panel__post-pass-button--danger"
+                onClick={() => onRemovePostProcessPass(activePostProcessPass.id)}
+                disabled={postProcessPasses.length <= 1}
+              >
+                삭제
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
       <div className="editor-panel__summary">
-        <span className={`status-chip ${currentDiagnosticCount > 0 ? 'status-chip--error' : 'status-chip--ready'}`}>
+        <span
+          className={`status-chip ${currentDiagnosticCount > 0 ? 'status-chip--error' : 'status-chip--ready'}`}
+        >
           {currentDiagnosticCount > 0 ? `진단 ${currentDiagnosticCount}건` : '진단 없음'}
         </span>
-        <p>오류가 있는 줄은 gutter와 배경으로 표시되며, 콘솔 클릭 시 해당 위치로 바로 이동합니다.</p>
+        <p>
+          오류가 있는 줄은 gutter와 배경으로 표시되고, 콘솔 클릭 시 해당 위치로 바로
+          이동합니다.
+        </p>
       </div>
 
       <div ref={containerRef} className="editor-panel__editor editor-panel__editor--codemirror" />

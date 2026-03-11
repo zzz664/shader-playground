@@ -4,6 +4,7 @@ import { frameModelBounds } from "./core/model/framing/frameModelBounds";
 import type { RendererStateSnapshot } from "./core/renderer/WebGLQuadRenderer";
 import {
   defaultFragmentShaderSource,
+  defaultPostProcessFragmentShaderSource,
   defaultVertexShaderSource,
 } from "./core/shader/templates/defaultShaders";
 import { AssetBrowserPanel } from "./features/assets/AssetBrowserPanel";
@@ -14,6 +15,7 @@ import {
   type DiagnosticFocusTarget,
 } from "./features/editor/ShaderEditorPanel";
 import { MaterialInspectorPanel } from "./features/inspector/MaterialInspectorPanel";
+import { ModelImportPanel } from "./features/model/ModelImportPanel";
 import { ShaderPresetPanel } from "./features/presets/ShaderPresetPanel";
 import {
   shaderPresets,
@@ -29,7 +31,15 @@ import type { ModelAsset } from "./shared/types/modelAsset";
 import type { ProjectSnapshot } from "./shared/types/projectSnapshot";
 import type { RenderDiagnostics } from "./shared/types/renderDiagnostics";
 import { defaultModelTransformState } from "./shared/types/scenePreview";
-import { defaultBlendPresetState } from "./shared/types/scenePreview";
+import {
+  defaultBlendPresetState,
+  defaultPostProcessEnabled,
+} from "./shared/types/scenePreview";
+import {
+  createDefaultPostProcessPass,
+  defaultPostProcessChainState,
+  type PostProcessChainState,
+} from "./shared/types/postProcess";
 import type {
   BlendPresetState,
   GeometryPreviewId,
@@ -50,6 +60,7 @@ import { parseRenderDiagnostics } from "./shared/utils/parseDiagnostics";
 import {
   clearStoredProjectSnapshot,
   loadStoredProjectSnapshot,
+  normalizeProjectSnapshot,
   restoreModelAsset,
   saveProjectSnapshot,
   serializeModelAsset,
@@ -61,7 +72,7 @@ function buildAutoTextureBindings(
   modelAsset: ModelAsset,
 ) {
   const textureProperties = materialProperties.filter(
-    (property) => property.uiKind === "texture",
+    (property) => property.uiKind === "texture" && property.scope === "scene",
   );
   if (
     textureProperties.length === 0 ||
@@ -72,7 +83,7 @@ function buildAutoTextureBindings(
 
   const nextValues = { ...currentValues };
   const unassignedProperties = textureProperties.filter((property) => {
-    const value = nextValues[property.name];
+    const value = nextValues[property.id];
     return typeof value !== "string" || value.length === 0;
   });
 
@@ -81,7 +92,7 @@ function buildAutoTextureBindings(
   }
 
   if (textureProperties.length === 1) {
-    nextValues[textureProperties[0].name] =
+    nextValues[textureProperties[0].id] =
       modelAsset.textureBindings[0].textureAssetId;
     return nextValues;
   }
@@ -93,7 +104,7 @@ function buildAutoTextureBindings(
   modelAsset.textureBindings.forEach((binding, index) => {
     const property = unassignedProperties[index];
     if (property) {
-      nextValues[property.name] = binding.textureAssetId;
+      nextValues[property.id] = binding.textureAssetId;
     }
   });
 
@@ -123,6 +134,16 @@ function buildProjectSignature(snapshot: ProjectSnapshot) {
   });
 }
 
+function buildPostProcessCompileSignature(chainState: PostProcessChainState) {
+  return JSON.stringify(
+    chainState.passes.map((pass) => ({
+      id: pass.id,
+      enabled: pass.enabled,
+      source: pass.source,
+    })),
+  );
+}
+
 function createBlendPresetStateFromLegacyMode(
   blendMode: ProjectSnapshot["blendMode"],
 ): BlendPresetState {
@@ -142,6 +163,8 @@ function App() {
   const [fragmentSource, setFragmentSource] = useState(
     defaultFragmentShaderSource,
   );
+  const [postProcessChainState, setPostProcessChainState] =
+    useState<PostProcessChainState>(defaultPostProcessChainState);
   const [autoCompile, setAutoCompile] = useState(true);
   const [compileRequest, setCompileRequest] = useState({
     token: 0,
@@ -168,6 +191,9 @@ function App() {
   const [blendPresetState, setBlendPresetState] = useState<BlendPresetState>(
     defaultBlendPresetState,
   );
+  const [postProcessEnabled, setPostProcessEnabled] = useState(
+    defaultPostProcessEnabled,
+  );
   const [resolutionScale, setResolutionScale] = useState<ResolutionScale>(1);
   const [cameraState, setCameraState] = useState<ViewportCameraState>({
     yaw: 0.6,
@@ -179,6 +205,7 @@ function App() {
   );
   const [modelAsset, setModelAsset] = useState<ModelAsset | null>(null);
   const [modelLoadError, setModelLoadError] = useState<string | null>(null);
+  const [isUploadingModel, setIsUploadingModel] = useState(false);
   const [projectStatusMessage, setProjectStatusMessage] = useState<
     string | null
   >(null);
@@ -187,8 +214,11 @@ function App() {
   const [focusedDiagnostic, setFocusedDiagnostic] =
     useState<DiagnosticFocusTarget | null>(null);
   const [activeEditorStage, setActiveEditorStage] = useState<
-    "vertex" | "fragment"
+    "vertex" | "fragment" | "post"
   >("fragment");
+  const [activePostProcessPassId, setActivePostProcessPassId] = useState<
+    string | null
+  >(defaultPostProcessChainState.passes[0]?.id ?? null);
   const hasMountedRef = useRef(false);
   const textureAssetsRef = useRef<TextureAsset[]>([]);
   const restoreInProgressRef = useRef(false);
@@ -198,6 +228,20 @@ function App() {
     return diagnostics ? parseRenderDiagnostics(diagnostics) : [];
   }, [diagnostics]);
 
+  const postProcessCompileSignature = useMemo(
+    () => buildPostProcessCompileSignature(postProcessChainState),
+    [postProcessChainState],
+  );
+
+  const activePostProcessSource = useMemo(
+    () =>
+      (postProcessChainState.passes.find(
+        (pass) => pass.id === activePostProcessPassId,
+      ) ?? postProcessChainState.passes[0])?.source ??
+      defaultPostProcessFragmentShaderSource,
+    [activePostProcessPassId, postProcessChainState],
+  );
+
   const vertexDiagnosticLines = useMemo(() => {
     return parsedLines.filter((line) => line.stage === "vertex");
   }, [parsedLines]);
@@ -205,6 +249,14 @@ function App() {
   const fragmentDiagnosticLines = useMemo(() => {
     return parsedLines.filter((line) => line.stage === "fragment");
   }, [parsedLines]);
+
+  const postDiagnosticLines = useMemo(() => {
+    return parsedLines.filter(
+      (line) =>
+        line.stage === "post" &&
+        (activePostProcessPassId === null || line.passId === activePostProcessPassId),
+    );
+  }, [activePostProcessPassId, parsedLines]);
 
   const usedTextureIds = useMemo(() => {
     const ids = new Set<string>();
@@ -228,6 +280,10 @@ function App() {
       savedAt: new Date().toISOString(),
       vertexSource,
       fragmentSource,
+      postProcessSource: activePostProcessSource,
+      postProcessPasses: postProcessChainState.passes,
+      activePostProcessPassId,
+      postProcessEnabled,
       sceneMode,
       geometryId,
       blendPresetState,
@@ -246,6 +302,10 @@ function App() {
       materialValues,
       modelAsset,
       modelTransform,
+      activePostProcessSource,
+      activePostProcessPassId,
+      postProcessChainState,
+      postProcessEnabled,
       resolutionScale,
       sceneMode,
       textureAssets,
@@ -260,13 +320,14 @@ function App() {
     restoreInProgressRef.current = true;
 
     try {
+      const normalizedSnapshot = normalizeProjectSnapshot(snapshot);
       const restoredTextures = await Promise.all(
-        snapshot.textureAssets.map((asset) =>
+        normalizedSnapshot.textureAssets.map((asset) =>
           createTextureAssetFromSerialized(asset),
         ),
       );
       const restoredModelAsset = restoreModelAsset(
-        snapshot.modelAsset,
+        normalizedSnapshot.modelAsset,
         restoredTextures,
       );
 
@@ -275,24 +336,34 @@ function App() {
       });
 
       setTextureAssets(restoredTextures);
-      setVertexSource(snapshot.vertexSource);
-      setFragmentSource(snapshot.fragmentSource);
-      setSceneMode(snapshot.sceneMode);
-      setGeometryId(snapshot.geometryId);
-      setBlendPresetState(
-        snapshot.blendPresetState ??
-          createBlendPresetStateFromLegacyMode(snapshot.blendMode),
+      setVertexSource(normalizedSnapshot.vertexSource);
+      setFragmentSource(normalizedSnapshot.fragmentSource);
+      setPostProcessChainState({
+        enabled: normalizedSnapshot.postProcessEnabled,
+        passes: normalizedSnapshot.postProcessPasses,
+      });
+      setActivePostProcessPassId(
+        normalizedSnapshot.activePostProcessPassId ??
+          normalizedSnapshot.postProcessPasses[0]?.id ??
+          null,
       );
-      setResolutionScale(snapshot.resolutionScale ?? 1);
-      setCameraState(snapshot.cameraState);
-      setModelTransform(snapshot.modelTransform ?? defaultModelTransformState);
-      setMaterialValues(snapshot.materialValues);
+      setPostProcessEnabled(normalizedSnapshot.postProcessEnabled);
+      setSceneMode(normalizedSnapshot.sceneMode);
+      setGeometryId(normalizedSnapshot.geometryId);
+      setBlendPresetState(
+        normalizedSnapshot.blendPresetState ??
+          createBlendPresetStateFromLegacyMode(normalizedSnapshot.blendMode),
+      );
+      setResolutionScale(normalizedSnapshot.resolutionScale ?? 1);
+      setCameraState(normalizedSnapshot.cameraState);
+      setModelTransform(normalizedSnapshot.modelTransform);
+      setMaterialValues(normalizedSnapshot.materialValues);
       setModelAsset(restoredModelAsset);
       setTextureLoadError(null);
       setModelLoadError(null);
-      setLastSavedAt(formatSavedAt(snapshot.savedAt));
+      setLastSavedAt(formatSavedAt(normalizedSnapshot.savedAt));
       setProjectStatusMessage(`${sourceLabel} 불러오기를 완료했습니다.`);
-      projectSignatureRef.current = buildProjectSignature(snapshot);
+      projectSignatureRef.current = buildProjectSignature(normalizedSnapshot);
       setIsProjectDirty(false);
       setIsCompiling(true);
       setCompileRequest((currentValue) => ({
@@ -330,7 +401,7 @@ function App() {
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [autoCompile, fragmentSource, vertexSource]);
+  }, [autoCompile, fragmentSource, postProcessCompileSignature, vertexSource]);
 
   useEffect(() => {
     if (!hasMountedRef.current || restoreInProgressRef.current) {
@@ -507,8 +578,134 @@ function App() {
     setModelTransform(defaultModelTransformState);
   };
 
+  const handlePostProcessSourceChange = (nextValue: string) => {
+    if (nextValue === activePostProcessSource) {
+      return;
+    }
+
+    setPostProcessChainState((currentState) => {
+      const activePassId =
+        activePostProcessPassId ?? currentState.passes[0]?.id ?? null;
+      const nextPasses =
+        currentState.passes.length > 0
+          ? currentState.passes.map((pass) =>
+              pass.id === activePassId
+                ? {
+                    ...pass,
+                    source: nextValue,
+                  }
+                : pass,
+            )
+          : [createDefaultPostProcessPass({ source: nextValue })];
+
+      return {
+        ...currentState,
+        passes: nextPasses,
+      };
+    });
+
+    if (autoCompile && hasMountedRef.current) {
+      setIsCompiling(true);
+    }
+  };
+
+  const handleAddPostProcessPass = () => {
+    const nextPassId = `post-pass-${Date.now()}`;
+    const nextPass = createDefaultPostProcessPass({
+      id: nextPassId,
+      name: `Pass ${postProcessChainState.passes.length + 1}`,
+    });
+
+    setPostProcessChainState((currentState) => ({
+      ...currentState,
+      passes: [...currentState.passes, nextPass],
+    }));
+    setActivePostProcessPassId(nextPassId);
+    setActiveEditorStage("post");
+    setFocusedDiagnostic(null);
+
+    if (autoCompile && hasMountedRef.current) {
+      setIsCompiling(true);
+    }
+  };
+
+  const handleRemovePostProcessPass = (passId: string) => {
+    setPostProcessChainState((currentState) => {
+      const nextPasses = currentState.passes.filter((pass) => pass.id !== passId);
+
+      if (nextPasses.length === 0) {
+        const fallbackPass = createDefaultPostProcessPass();
+        setActivePostProcessPassId(fallbackPass.id);
+        return {
+          ...currentState,
+          passes: [fallbackPass],
+        };
+      }
+
+      if (activePostProcessPassId === passId) {
+        setActivePostProcessPassId(nextPasses[0].id);
+      }
+
+      return {
+        ...currentState,
+        passes: nextPasses,
+      };
+    });
+    setFocusedDiagnostic(null);
+
+    if (autoCompile && hasMountedRef.current) {
+      setIsCompiling(true);
+    }
+  };
+
+  const handleRenamePostProcessPass = (passId: string, name: string) => {
+    setPostProcessChainState((currentState) => ({
+      ...currentState,
+      passes: currentState.passes.map((pass) =>
+        pass.id === passId
+          ? {
+              ...pass,
+              name,
+            }
+          : pass,
+      ),
+    }));
+  };
+
+  const handleMovePostProcessPass = (
+    passId: string,
+    direction: "up" | "down",
+  ) => {
+    setPostProcessChainState((currentState) => {
+      const index = currentState.passes.findIndex((pass) => pass.id === passId);
+      if (index === -1) {
+        return currentState;
+      }
+
+      const targetIndex = direction === "up" ? index - 1 : index + 1;
+      if (targetIndex < 0 || targetIndex >= currentState.passes.length) {
+        return currentState;
+      }
+
+      const nextPasses = [...currentState.passes];
+      const [selectedPass] = nextPasses.splice(index, 1);
+      nextPasses.splice(targetIndex, 0, selectedPass);
+
+      return {
+        ...currentState,
+        passes: nextPasses,
+      };
+    });
+    setFocusedDiagnostic(null);
+
+    if (autoCompile && hasMountedRef.current) {
+      setIsCompiling(true);
+    }
+  };
+
   const handleModelUpload = async (files: File[]) => {
     setModelLoadError(null);
+    setIsUploadingModel(true);
 
     try {
       if (modelAsset) {
@@ -555,6 +752,8 @@ function App() {
           ? error.message
           : "FBX 모델을 불러오지 못했습니다.";
       setModelLoadError(message);
+    } finally {
+      setIsUploadingModel(false);
     }
   };
 
@@ -623,7 +822,9 @@ function App() {
 
   const handleImportProject = async (file: File) => {
     try {
-      const parsedSnapshot = JSON.parse(await file.text()) as ProjectSnapshot;
+      const parsedSnapshot = normalizeProjectSnapshot(
+        JSON.parse(await file.text()) as ProjectSnapshot,
+      );
       await applyProjectSnapshot(parsedSnapshot, "JSON 프로젝트");
     } catch (error) {
       const message =
@@ -647,8 +848,13 @@ function App() {
       return;
     }
 
+    if (line.stage === "post" && line.passId) {
+      setActivePostProcessPassId(line.passId);
+    }
+
     setFocusedDiagnostic({
       stage: line.stage,
+      passId: line.passId,
       line: line.line,
       column: line.column,
       token: Date.now(),
@@ -659,6 +865,8 @@ function App() {
   const handleApplyPreset = (preset: ShaderPreset) => {
     setVertexSource(preset.vertexSource);
     setFragmentSource(preset.fragmentSource);
+    setPostProcessChainState(defaultPostProcessChainState);
+    setActivePostProcessPassId(defaultPostProcessChainState.passes[0]?.id ?? null);
     setFocusedDiagnostic(null);
     setIsCompiling(true);
     setCompileRequest((currentValue) => ({
@@ -670,6 +878,14 @@ function App() {
   return (
     <main className="app-shell">
       <section className="topbar-grid">
+        <ModelImportPanel
+          modelAsset={modelAsset}
+          modelLoadError={modelLoadError}
+          isUploadingModel={isUploadingModel}
+          onModelUpload={handleModelUpload}
+          onModelClear={clearCurrentModel}
+        />
+
         <ProjectPanel
           isDirty={isProjectDirty}
           lastSavedAt={lastSavedAt}
@@ -683,7 +899,6 @@ function App() {
 
         <CompilePanel
           autoCompile={autoCompile}
-          errorCount={parsedLines.length}
           isCompiling={isCompiling}
           lastCompileMode={lastCompileMode}
           lastCompileSucceeded={lastCompileSucceeded}
@@ -697,16 +912,18 @@ function App() {
           <ViewportPanel
             vertexSource={vertexSource}
             fragmentSource={fragmentSource}
+            postProcessSource={activePostProcessSource}
+            postProcessPasses={postProcessChainState.passes}
             materialValues={materialValues}
             textureAssets={textureAssets}
             sceneMode={sceneMode}
             geometryId={geometryId}
             blendPresetState={blendPresetState}
+            postProcessEnabled={postProcessEnabled}
             resolutionScale={resolutionScale}
             cameraState={cameraState}
             modelTransform={modelTransform}
             modelAsset={modelAsset}
-            modelLoadError={modelLoadError}
             compileRequest={compileRequest}
             onSceneModeChange={setSceneMode}
             onGeometryChange={setGeometryId}
@@ -716,11 +933,10 @@ function App() {
                 [blendAxis]: blendPreset,
               }))
             }
+            onPostProcessEnabledChange={setPostProcessEnabled}
             onResolutionScaleChange={setResolutionScale}
             onCameraChange={setCameraState}
             onModelTransformChange={setModelTransform}
-            onModelUpload={handleModelUpload}
-            onModelClear={clearCurrentModel}
             onCompileResult={handleCompileResult}
           />
         </aside>
@@ -730,8 +946,12 @@ function App() {
             activeStage={activeEditorStage}
             vertexSource={vertexSource}
             fragmentSource={fragmentSource}
+            postProcessSource={activePostProcessSource}
+            postProcessPasses={postProcessChainState.passes}
+            activePostProcessPassId={activePostProcessPassId}
             vertexDiagnostics={vertexDiagnosticLines}
             fragmentDiagnostics={fragmentDiagnosticLines}
+            postDiagnostics={postDiagnosticLines}
             focusTarget={focusedDiagnostic}
             presetSlot={
               <ShaderPresetPanel
@@ -744,6 +964,12 @@ function App() {
             onStageChange={setActiveEditorStage}
             onVertexChange={handleVertexSourceChange}
             onFragmentChange={handleFragmentSourceChange}
+            onPostProcessChange={handlePostProcessSourceChange}
+            onActivePostProcessPassChange={setActivePostProcessPassId}
+            onAddPostProcessPass={handleAddPostProcessPass}
+            onRemovePostProcessPass={handleRemovePostProcessPass}
+            onRenamePostProcessPass={handleRenamePostProcessPass}
+            onMovePostProcessPass={handleMovePostProcessPass}
           />
 
           <ShaderConsolePanel

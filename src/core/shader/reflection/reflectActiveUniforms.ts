@@ -1,7 +1,11 @@
-import type { MaterialPropertyDefinition, MaterialPropertyValue } from '../../../shared/types/materialProperty'
+import type {
+  MaterialPropertyDefinition,
+  MaterialPropertyScope,
+  MaterialPropertyValue,
+} from '../../../shared/types/materialProperty'
 import { parseShaderMetadata } from '../metadata/parseShaderMetadata'
 
-const builtinUniformNames = new Set(
+const defaultBuiltinUniformNames = new Set(
   [
     'uTime',
     'uResolution',
@@ -60,17 +64,24 @@ function getSupportedUniformTemplate(
 export function reflectActiveUniforms(
   gl: WebGL2RenderingContext,
   program: WebGLProgram,
-  shaderSources?: {
+  options?: {
     vertexSource?: string
     fragmentSource?: string
+    builtinUniformNames?: Set<string>
+    scope?: MaterialPropertyScope
+    idPrefix?: string
+    postPassId?: string
+    postPassName?: string
   },
 ): MaterialPropertyDefinition[] {
   const activeUniformCount = gl.getProgramParameter(program, gl.ACTIVE_UNIFORMS) as number
   const properties: MaterialPropertyDefinition[] = []
   const metadataMap = parseShaderMetadata(
-    shaderSources?.vertexSource ?? '',
-    shaderSources?.fragmentSource ?? '',
+    options?.vertexSource ?? '',
+    options?.fragmentSource ?? '',
   )
+  const builtinUniformNames = options?.builtinUniformNames ?? defaultBuiltinUniformNames
+  const scope = options?.scope ?? 'scene'
 
   for (let index = 0; index < activeUniformCount; index += 1) {
     const uniform = gl.getActiveUniform(program, index)
@@ -91,7 +102,11 @@ export function reflectActiveUniforms(
     const metadata = metadataMap.get(normalizedName)
 
     properties.push({
+      id: options?.idPrefix ?? `${scope}:${normalizedName}`,
       name: normalizedName,
+      scope,
+      postPassId: options?.postPassId,
+      postPassName: options?.postPassName,
       valueType: supportedTemplate.valueType,
       uiKind: resolveUiKind(supportedTemplate, metadata?.uiKind),
       componentCount: supportedTemplate.componentCount,

@@ -1,4 +1,8 @@
-import type { RenderDiagnostics, ShaderStageDiagnostic } from '../../../shared/types/renderDiagnostics'
+import type {
+  DiagnosticStage,
+  RenderDiagnostics,
+  ShaderStageDiagnostic,
+} from '../../../shared/types/renderDiagnostics'
 
 interface CompiledShaderResult {
   shader: WebGLShader | null
@@ -9,7 +13,7 @@ function compileShader(
   gl: WebGL2RenderingContext,
   type: number,
   source: string,
-  stage: 'vertex' | 'fragment',
+  stage: DiagnosticStage,
 ): CompiledShaderResult {
   const shader = gl.createShader(type)
 
@@ -57,9 +61,23 @@ export function createShaderProgram(
   gl: WebGL2RenderingContext,
   vertexSource: string,
   fragmentSource: string,
+  stageOverrides: {
+    vertex?: DiagnosticStage
+    fragment?: DiagnosticStage
+  } = {},
 ): { program: WebGLProgram | null; diagnostics: RenderDiagnostics } {
-  const vertex = compileShader(gl, gl.VERTEX_SHADER, vertexSource, 'vertex')
-  const fragment = compileShader(gl, gl.FRAGMENT_SHADER, fragmentSource, 'fragment')
+  const vertex = compileShader(
+    gl,
+    gl.VERTEX_SHADER,
+    vertexSource,
+    stageOverrides.vertex ?? 'vertex',
+  )
+  const fragment = compileShader(
+    gl,
+    gl.FRAGMENT_SHADER,
+    fragmentSource,
+    stageOverrides.fragment ?? 'fragment',
+  )
 
   if (!vertex.shader || !fragment.shader) {
     return {

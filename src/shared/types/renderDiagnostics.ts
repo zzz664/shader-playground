@@ -1,7 +1,8 @@
 export type ParsedDiagnosticSeverity = 'error' | 'warning'
+export type DiagnosticStage = 'vertex' | 'fragment' | 'post'
 
 export interface ShaderStageDiagnostic {
-  stage: 'vertex' | 'fragment'
+  stage: DiagnosticStage
   success: boolean
   log: string
 }
@@ -11,14 +12,25 @@ export interface ProgramDiagnostic {
   log: string
 }
 
-export interface RenderDiagnostics {
+export interface PostPassDiagnostic {
+  passId: string
+  passName: string
   shaders: ShaderStageDiagnostic[]
   program: ProgramDiagnostic
 }
 
+export interface RenderDiagnostics {
+  shaders: ShaderStageDiagnostic[]
+  program: ProgramDiagnostic
+  postProgram?: ProgramDiagnostic
+  postPasses?: PostPassDiagnostic[]
+}
+
 export interface ParsedDiagnosticLine {
-  stage: 'vertex' | 'fragment' | 'program'
+  stage: DiagnosticStage | 'program'
   severity: ParsedDiagnosticSeverity
+  passId?: string
+  passName?: string
   line: number | null
   column: number | null
   message: string

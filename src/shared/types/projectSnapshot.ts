@@ -8,6 +8,7 @@ import type {
   SceneMode,
   ViewportCameraState,
 } from './scenePreview'
+import type { PostProcessPass } from './postProcess'
 import type { TextureAssetSourceKind, TextureWrapMode } from './textureAsset'
 
 export interface SerializedTextureAsset {
@@ -42,6 +43,10 @@ export interface ProjectSnapshot {
   savedAt: string
   vertexSource: string
   fragmentSource: string
+  postProcessSource?: string
+  postProcessPasses?: PostProcessPass[]
+  activePostProcessPassId?: string | null
+  postProcessEnabled?: boolean
   sceneMode: SceneMode
   geometryId: GeometryPreviewId
   blendPresetState?: BlendPresetState
@@ -52,4 +57,13 @@ export interface ProjectSnapshot {
   materialValues: Record<string, MaterialPropertyValue>
   textureAssets: SerializedTextureAsset[]
   modelAsset: SerializedModelAsset | null
+}
+
+export interface NormalizedProjectSnapshot extends ProjectSnapshot {
+  postProcessSource: string
+  postProcessPasses: PostProcessPass[]
+  activePostProcessPassId: string | null
+  postProcessEnabled: boolean
+  blendPresetState: BlendPresetState
+  modelTransform: ModelTransformState
 }

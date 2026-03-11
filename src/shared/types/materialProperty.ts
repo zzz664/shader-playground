@@ -22,9 +22,14 @@ export type MaterialPropertyUiKind =
   | 'color'
 
 export type MaterialPropertyValue = number | boolean | number[] | boolean[] | string | null
+export type MaterialPropertyScope = 'scene' | 'post'
 
 export interface MaterialPropertyDefinition {
+  id: string
   name: string
+  scope: MaterialPropertyScope
+  postPassId?: string
+  postPassName?: string
   valueType: MaterialPropertyValueType
   uiKind: MaterialPropertyUiKind
   componentCount: 1 | 2 | 3 | 4
