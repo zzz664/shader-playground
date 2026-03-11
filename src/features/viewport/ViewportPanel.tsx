@@ -1,109 +1,73 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
-import { frameModelBounds } from '../../core/model/framing/frameModelBounds'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
+import { frameModelBounds } from "../../core/model/framing/frameModelBounds";
 import {
   WebGLQuadRenderer,
   type RendererStateSnapshot,
-} from '../../core/renderer/WebGLQuadRenderer'
-import type { MaterialPropertyValue } from '../../shared/types/materialProperty'
-import type { ModelAsset } from '../../shared/types/modelAsset'
+} from "../../core/renderer/WebGLQuadRenderer";
+import type { MaterialPropertyValue } from "../../shared/types/materialProperty";
+import type { ModelAsset } from "../../shared/types/modelAsset";
 import type {
-  BlendMode,
+  BlendPreset,
+  BlendPresetState,
   GeometryPreviewId,
+  ModelTransformState,
   ResolutionScale,
   SceneMode,
   ViewportCameraState,
-} from '../../shared/types/scenePreview'
-import type { TextureAsset } from '../../shared/types/textureAsset'
+} from "../../shared/types/scenePreview";
+import type { TextureAsset } from "../../shared/types/textureAsset";
 
 interface ViewportPanelState {
-  ready: boolean
-  message: string
-  snapshot: RendererStateSnapshot | null
+  ready: boolean;
+  message: string;
+  snapshot: RendererStateSnapshot | null;
 }
 
 interface ViewportPanelProps {
-  vertexSource: string
-  fragmentSource: string
-  materialValues: Record<string, MaterialPropertyValue>
-  textureAssets: TextureAsset[]
-  sceneMode: SceneMode
-  geometryId: GeometryPreviewId
-  blendMode: BlendMode
-  resolutionScale: ResolutionScale
-  cameraState: ViewportCameraState
-  modelAsset: ModelAsset | null
-  modelLoadError: string | null
+  vertexSource: string;
+  fragmentSource: string;
+  materialValues: Record<string, MaterialPropertyValue>;
+  textureAssets: TextureAsset[];
+  sceneMode: SceneMode;
+  geometryId: GeometryPreviewId;
+  blendPresetState: BlendPresetState;
+  resolutionScale: ResolutionScale;
+  cameraState: ViewportCameraState;
+  modelTransform: ModelTransformState;
+  modelAsset: ModelAsset | null;
+  modelLoadError: string | null;
   compileRequest: {
-    token: number
-    mode: 'auto' | 'manual'
-  }
-  onSceneModeChange: (sceneMode: SceneMode) => void
-  onGeometryChange: (geometryId: GeometryPreviewId) => void
-  onBlendModeChange: (blendMode: BlendMode) => void
-  onResolutionScaleChange: (resolutionScale: ResolutionScale) => void
-  onCameraChange: (cameraState: ViewportCameraState) => void
-  onModelUpload: (files: File[]) => Promise<void>
-  onModelClear: () => void
-  onCompileResult: (snapshot: RendererStateSnapshot, compileMode: 'initial' | 'auto' | 'manual') => void
+    token: number;
+    mode: "auto" | "manual";
+  };
+  onSceneModeChange: (sceneMode: SceneMode) => void;
+  onGeometryChange: (geometryId: GeometryPreviewId) => void;
+  onBlendPresetChange: (
+    blendAxis: "src" | "dst",
+    blendPreset: BlendPreset,
+  ) => void;
+  onResolutionScaleChange: (resolutionScale: ResolutionScale) => void;
+  onCameraChange: (cameraState: ViewportCameraState) => void;
+  onModelTransformChange: (modelTransform: ModelTransformState) => void;
+  onModelUpload: (files: File[]) => Promise<void>;
+  onModelClear: () => void;
+  onCompileResult: (
+    snapshot: RendererStateSnapshot,
+    compileMode: "initial" | "auto" | "manual",
+  ) => void;
 }
 
 const geometryOptions: Array<{ value: GeometryPreviewId; label: string }> = [
-  { value: 'plane', label: 'Plane' },
-  { value: 'cube', label: 'Cube' },
-  { value: 'sphere', label: 'Sphere' },
-]
-
-type Vector3 = [number, number, number]
-
-interface ProjectedPoint {
-  x: number
-  y: number
-  depth: number
-}
-
-function normalizeVector(vector: Vector3): Vector3 {
-  const length = Math.hypot(vector[0], vector[1], vector[2]) || 1
-  return [vector[0] / length, vector[1] / length, vector[2] / length]
-}
-
-function crossVectors(a: Vector3, b: Vector3): Vector3 {
-  return [
-    a[1] * b[2] - a[2] * b[1],
-    a[2] * b[0] - a[0] * b[2],
-    a[0] * b[1] - a[1] * b[0],
-  ]
-}
-
-function dotVectors(a: Vector3, b: Vector3) {
-  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-}
-
-function createOverlayProjector(cameraState: ViewportCameraState) {
-  const distance = 3
-  const radius = distance * Math.cos(cameraState.pitch)
-  const cameraPosition: Vector3 = [
-    Math.sin(cameraState.yaw) * radius,
-    Math.sin(cameraState.pitch) * distance,
-    Math.cos(cameraState.yaw) * radius,
-  ]
-  const forward = normalizeVector([-cameraPosition[0], -cameraPosition[1], -cameraPosition[2]])
-  const right = normalizeVector(crossVectors(forward, [0, 1, 0]))
-  const up = normalizeVector(crossVectors(right, forward))
-
-  return (point: Vector3, scale: number, centerX: number, centerY: number): ProjectedPoint => {
-    const cameraX = dotVectors(point, right)
-    const cameraY = dotVectors(point, up)
-    const cameraZ = dotVectors(point, forward)
-    const perspective = 3.6
-    const perspectiveScale = perspective / Math.max(1.2, perspective - cameraZ)
-
-    return {
-      x: centerX + cameraX * scale * perspectiveScale,
-      y: centerY - cameraY * scale * perspectiveScale,
-      depth: cameraZ,
-    }
-  }
-}
+  { value: "plane", label: "Plane" },
+  { value: "cube", label: "Cube" },
+  { value: "sphere", label: "Sphere" },
+];
 
 export function ViewportPanel({
   vertexSource,
@@ -112,278 +76,299 @@ export function ViewportPanel({
   textureAssets,
   sceneMode,
   geometryId,
-  blendMode,
+  blendPresetState,
   resolutionScale,
   cameraState,
+  modelTransform,
   modelAsset,
   modelLoadError,
   compileRequest,
   onSceneModeChange,
   onGeometryChange,
-  onBlendModeChange,
+  onBlendPresetChange,
   onResolutionScaleChange,
   onCameraChange,
   onModelUpload,
   onModelClear,
   onCompileResult,
 }: ViewportPanelProps) {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null)
-  const canvasFrameRef = useRef<HTMLDivElement | null>(null)
-  const rendererRef = useRef<WebGLQuadRenderer | null>(null)
-  const compileTokenRef = useRef(compileRequest.token)
-  const onCompileResultRef = useRef(onCompileResult)
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const canvasFrameRef = useRef<HTMLDivElement | null>(null);
+  const rendererRef = useRef<WebGLQuadRenderer | null>(null);
+  const compileTokenRef = useRef(compileRequest.token);
+  const onCompileResultRef = useRef(onCompileResult);
   const dragStateRef = useRef<{
-    pointerId: number
-    startX: number
-    startY: number
-    yaw: number
-    pitch: number
-  } | null>(null)
+    pointerId: number;
+    startX: number;
+    startY: number;
+    yaw: number;
+    pitch: number;
+  } | null>(null);
   const initialSourcesRef = useRef({
     vertexSource,
     fragmentSource,
-  })
+  });
   const initialPreviewRef = useRef({
     sceneMode,
     geometryId,
-    blendMode,
+    blendPresetState,
     resolutionScale,
     cameraState,
-  })
-  const [isUploadingModel, setIsUploadingModel] = useState(false)
-  const [isPageVisible, setIsPageVisible] = useState(document.visibilityState === 'visible')
-  const [isOrbitDragging, setIsOrbitDragging] = useState(false)
+    modelTransform,
+  });
+  const [isUploadingModel, setIsUploadingModel] = useState(false);
+  const [isPageVisible, setIsPageVisible] = useState(
+    document.visibilityState === "visible",
+  );
+  const [isOrbitDragging, setIsOrbitDragging] = useState(false);
   const [state, setState] = useState<ViewportPanelState>({
     ready: false,
-    message: 'WebGL2 뷰포트를 초기화하는 중입니다.',
+    message: "WebGL2 뷰포트를 초기화하는 중입니다.",
     snapshot: null,
-  })
-
-  const overlayProjector = useMemo(() => createOverlayProjector(cameraState), [cameraState])
-
-  const gizmoAxes = useMemo(() => {
-    const center = overlayProjector([0, 0, 0], 1, 50, 50)
-    const axes = [
-      { id: 'x', label: 'X', color: '#f87171', end: overlayProjector([1, 0, 0], 20, 50, 50) },
-      { id: 'y', label: 'Y', color: '#4ade80', end: overlayProjector([0, 1, 0], 20, 50, 50) },
-      { id: 'z', label: 'Z', color: '#60a5fa', end: overlayProjector([0, 0, 1], 20, 50, 50) },
-    ]
-
-    return axes
-      .map((axis) => ({
-        ...axis,
-        center,
-      }))
-      .sort((left, right) => left.end.depth - right.end.depth)
-  }, [overlayProjector])
+  });
 
   const syncSnapshotState = () => {
-    const snapshot = rendererRef.current?.getSnapshot() ?? null
+    const snapshot = rendererRef.current?.getSnapshot() ?? null;
     if (!snapshot) {
-      return
+      return;
     }
 
     setState((currentState) => ({
       ...currentState,
       snapshot,
-    }))
-  }
+    }));
+  };
 
   useEffect(() => {
-    onCompileResultRef.current = onCompileResult
-  }, [onCompileResult])
+    onCompileResultRef.current = onCompileResult;
+  }, [onCompileResult]);
 
   useEffect(() => {
-    const canvas = canvasRef.current
+    const canvas = canvasRef.current;
     if (!canvas) {
-      return
+      return;
     }
 
-    let renderer: WebGLQuadRenderer | null = null
+    let renderer: WebGLQuadRenderer | null = null;
 
     try {
       renderer = new WebGLQuadRenderer(canvas, {
         vertexSource: initialSourcesRef.current.vertexSource,
         fragmentSource: initialSourcesRef.current.fragmentSource,
-      })
-      renderer.updateSceneMode(initialPreviewRef.current.sceneMode)
-      renderer.updateGeometry(initialPreviewRef.current.geometryId)
-      renderer.updateBlendMode(initialPreviewRef.current.blendMode)
-      renderer.updateResolutionScale(initialPreviewRef.current.resolutionScale)
-      renderer.updateCameraState(initialPreviewRef.current.cameraState)
-      renderer.setViewportActive(document.visibilityState === 'visible')
-      renderer.start()
-      rendererRef.current = renderer
+      });
+      renderer.updateSceneMode(initialPreviewRef.current.sceneMode);
+      renderer.updateGeometry(initialPreviewRef.current.geometryId);
+      renderer.updateBlendPresetState(
+        initialPreviewRef.current.blendPresetState,
+      );
+      renderer.updateResolutionScale(initialPreviewRef.current.resolutionScale);
+      renderer.updateCameraState(initialPreviewRef.current.cameraState);
+      renderer.updateModelTransform(initialPreviewRef.current.modelTransform);
+      renderer.setViewportActive(document.visibilityState === "visible");
+      renderer.start();
+      rendererRef.current = renderer;
 
-      const snapshot = renderer.getSnapshot()
+      const snapshot = renderer.getSnapshot();
       setState({
         ready: true,
-        message: 'WebGL2 viewport가 준비되었습니다.',
+        message: "WebGL2 뷰포트가 준비되었습니다.",
         snapshot,
-      })
-      onCompileResultRef.current(snapshot, 'initial')
+      });
+      onCompileResultRef.current(snapshot, "initial");
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : '초기화 중 알 수 없는 오류가 발생했습니다.'
+        error instanceof Error
+          ? error.message
+          : "초기화 중 알 수 없는 오류가 발생했습니다.";
       setState({
         ready: false,
         message,
         snapshot: null,
-      })
+      });
     }
 
     return () => {
-      rendererRef.current = null
-      renderer?.dispose()
-    }
-  }, [])
+      rendererRef.current = null;
+      renderer?.dispose();
+    };
+  }, []);
 
   useEffect(() => {
-    const renderer = rendererRef.current
+    const renderer = rendererRef.current;
     if (!renderer || compileTokenRef.current === compileRequest.token) {
-      return
+      return;
     }
 
-    compileTokenRef.current = compileRequest.token
-    const snapshot = renderer.compileSources(vertexSource, fragmentSource)
+    compileTokenRef.current = compileRequest.token;
+    const snapshot = renderer.compileSources(vertexSource, fragmentSource);
     setState((currentState) => ({
       ...currentState,
       snapshot,
       message: snapshot.compileSucceeded
-        ? '최신 셰이더를 적용했습니다.'
-        : '컴파일에 실패해 마지막 성공 렌더 결과를 유지합니다.',
-    }))
-    onCompileResultRef.current(snapshot, compileRequest.mode)
-  }, [compileRequest.mode, compileRequest.token, fragmentSource, vertexSource])
+        ? "최신 셰이더를 적용했습니다."
+        : "컴파일에 실패해 마지막 성공 렌더 결과를 유지합니다.",
+    }));
+    onCompileResultRef.current(snapshot, compileRequest.mode);
+  }, [compileRequest.mode, compileRequest.token, fragmentSource, vertexSource]);
 
   useEffect(() => {
-    rendererRef.current?.updateMaterialValues(materialValues)
-  }, [materialValues])
+    rendererRef.current?.updateMaterialValues(materialValues);
+  }, [materialValues]);
 
   useEffect(() => {
-    rendererRef.current?.syncTextureAssets(textureAssets)
-  }, [textureAssets])
+    rendererRef.current?.syncTextureAssets(textureAssets);
+  }, [textureAssets]);
 
   useEffect(() => {
-    rendererRef.current?.updateSceneMode(sceneMode)
-    syncSnapshotState()
-  }, [sceneMode])
+    rendererRef.current?.updateSceneMode(sceneMode);
+    syncSnapshotState();
+  }, [sceneMode]);
 
   useEffect(() => {
-    rendererRef.current?.updateGeometry(geometryId)
-    syncSnapshotState()
-  }, [geometryId])
+    rendererRef.current?.updateGeometry(geometryId);
+    syncSnapshotState();
+  }, [geometryId]);
 
   useEffect(() => {
-    rendererRef.current?.updateBlendMode(blendMode)
-    syncSnapshotState()
-  }, [blendMode])
+    rendererRef.current?.updateBlendPresetState(blendPresetState);
+    syncSnapshotState();
+  }, [blendPresetState]);
 
   useEffect(() => {
-    rendererRef.current?.updateResolutionScale(resolutionScale)
-    syncSnapshotState()
-  }, [resolutionScale])
+    rendererRef.current?.updateResolutionScale(resolutionScale);
+    syncSnapshotState();
+  }, [resolutionScale]);
 
   useEffect(() => {
-    rendererRef.current?.updateCameraState(cameraState)
-  }, [cameraState])
+    rendererRef.current?.updateCameraState(cameraState);
+  }, [cameraState]);
+
+  useEffect(() => {
+    rendererRef.current?.updateModelTransform(modelTransform);
+  }, [modelTransform]);
 
   useEffect(() => {
     const handleVisibilityChange = () => {
-      const nextVisible = document.visibilityState === 'visible'
-      setIsPageVisible(nextVisible)
-      rendererRef.current?.setViewportActive(nextVisible)
-      syncSnapshotState()
+      const nextVisible = document.visibilityState === "visible";
+      setIsPageVisible(nextVisible);
+      rendererRef.current?.setViewportActive(nextVisible);
+      syncSnapshotState();
       setState((currentState) => ({
         ...currentState,
         message: nextVisible
-          ? '탭이 다시 활성화되어 렌더링을 재개했습니다.'
-          : '비활성 탭 상태이므로 렌더링을 일시 중지했습니다.',
-      }))
-    }
+          ? "탭이 다시 활성화되어 렌더링을 재개했습니다."
+          : "비활성 탭 상태이므로 렌더링을 일시 중지했습니다.",
+      }));
+    };
 
-    document.addEventListener('visibilitychange', handleVisibilityChange)
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
-    }
-  }, [])
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, []);
 
   useEffect(() => {
     const handlePageHide = () => {
-      rendererRef.current?.setViewportActive(false)
-    }
+      rendererRef.current?.setViewportActive(false);
+    };
 
     const handlePageShow = () => {
-      const nextVisible = document.visibilityState === 'visible'
-      rendererRef.current?.setViewportActive(nextVisible)
-    }
+      const nextVisible = document.visibilityState === "visible";
+      rendererRef.current?.setViewportActive(nextVisible);
+    };
 
-    window.addEventListener('pagehide', handlePageHide)
-    window.addEventListener('pageshow', handlePageShow)
+    window.addEventListener("pagehide", handlePageHide);
+    window.addEventListener("pageshow", handlePageShow);
 
     return () => {
-      window.removeEventListener('pagehide', handlePageHide)
-      window.removeEventListener('pageshow', handlePageShow)
-    }
-  }, [])
+      window.removeEventListener("pagehide", handlePageHide);
+      window.removeEventListener("pageshow", handlePageShow);
+    };
+  }, []);
 
   useEffect(() => {
-    rendererRef.current?.updateModelAsset(modelAsset)
-    syncSnapshotState()
+    rendererRef.current?.updateModelAsset(modelAsset);
+    syncSnapshotState();
     setState((currentState) => ({
       ...currentState,
       message: modelAsset
-        ? `${modelAsset.name} 모델을 현재 셰이더로 렌더링 중입니다.`
+        ? `${modelAsset.name} 모델을 현재 뷰포트에 반영했습니다.`
         : currentState.message,
-    }))
-  }, [modelAsset])
+    }));
+  }, [modelAsset]);
 
   const handleCameraAxisChange =
-    (key: keyof ViewportCameraState) => (event: ChangeEvent<HTMLInputElement>) => {
+    (key: keyof ViewportCameraState) =>
+    (event: ChangeEvent<HTMLInputElement>) => {
       onCameraChange({
         ...cameraState,
         [key]: Number(event.target.value),
-      })
-    }
+      });
+    };
 
   const handleCameraReset = () => {
-    const framedDistance = modelAsset ? frameModelBounds(modelAsset.bounds).distance : 4.8
+    const framedDistance = modelAsset
+      ? frameModelBounds(modelAsset.bounds).distance
+      : 4.8;
 
     onCameraChange({
       yaw: 0.6,
       pitch: 0.45,
       distance: framedDistance,
-    })
-  }
+    });
+  };
 
-  const handleModelFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
-    const nextFiles = event.target.files ? Array.from(event.target.files) : []
+  const handleModelFileChange = async (
+    event: ChangeEvent<HTMLInputElement>,
+  ) => {
+    const nextFiles = event.target.files ? Array.from(event.target.files) : [];
     if (nextFiles.length === 0) {
-      return
+      return;
     }
 
-    setIsUploadingModel(true)
+    setIsUploadingModel(true);
     try {
-      await onModelUpload(nextFiles)
+      await onModelUpload(nextFiles);
     } finally {
-      setIsUploadingModel(false)
-      event.target.value = ''
+      setIsUploadingModel(false);
+      event.target.value = "";
     }
-  }
+  };
+
+  const handleViewportKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const nativeKeyboardEvent = event.nativeEvent as KeyboardEvent & {
+      isComposing?: boolean;
+    };
+
+    if (
+      event.key.toLowerCase() !== "r" ||
+      event.repeat ||
+      nativeKeyboardEvent.isComposing
+    ) {
+      return;
+    }
+
+    rendererRef.current?.restartPlayback();
+    setState((currentState) => ({
+      ...currentState,
+      message: "셰이더 재생 시간을 다시 시작했습니다.",
+    }));
+  };
 
   useEffect(() => {
-    const canvasFrame = canvasFrameRef.current
+    const canvasFrame = canvasFrameRef.current;
     if (!canvasFrame) {
-      return
+      return;
     }
 
-    const clampPitch = (pitch: number) => Math.max(-1.45, Math.min(1.45, pitch))
-    const rotationSpeed = 0.01
+    const clampPitch = (pitch: number) =>
+      Math.max(-1.45, Math.min(1.45, pitch));
+    const rotationSpeed = 0.01;
 
     const handlePointerDown = (event: PointerEvent) => {
-      if (sceneMode !== 'model' || event.button !== 0) {
-        return
+      if (sceneMode !== "model" || event.button !== 0) {
+        return;
       }
 
       dragStateRef.current = {
@@ -392,89 +377,90 @@ export function ViewportPanel({
         startY: event.clientY,
         yaw: cameraState.yaw,
         pitch: cameraState.pitch,
-      }
-      setIsOrbitDragging(true)
-      canvasFrame.setPointerCapture(event.pointerId)
-    }
+      };
+      setIsOrbitDragging(true);
+      canvasFrame.setPointerCapture(event.pointerId);
+    };
 
     const handlePointerMove = (event: PointerEvent) => {
-      const dragState = dragStateRef.current
+      const dragState = dragStateRef.current;
       if (!dragState || dragState.pointerId !== event.pointerId) {
-        return
+        return;
       }
 
-      const deltaX = event.clientX - dragState.startX
-      const deltaY = event.clientY - dragState.startY
+      const deltaX = event.clientX - dragState.startX;
+      const deltaY = event.clientY - dragState.startY;
 
       onCameraChange({
         ...cameraState,
         yaw: dragState.yaw - deltaX * rotationSpeed,
         pitch: clampPitch(dragState.pitch + deltaY * rotationSpeed),
-      })
-    }
+      });
+    };
 
     const clearDragState = (pointerId: number) => {
-      const dragState = dragStateRef.current
+      const dragState = dragStateRef.current;
       if (!dragState || dragState.pointerId !== pointerId) {
-        return
+        return;
       }
 
-      dragStateRef.current = null
-      setIsOrbitDragging(false)
+      dragStateRef.current = null;
+      setIsOrbitDragging(false);
       if (canvasFrame.hasPointerCapture(pointerId)) {
-        canvasFrame.releasePointerCapture(pointerId)
+        canvasFrame.releasePointerCapture(pointerId);
       }
-    }
+    };
 
     const handlePointerUp = (event: PointerEvent) => {
-      clearDragState(event.pointerId)
-    }
+      clearDragState(event.pointerId);
+    };
 
     const handlePointerCancel = (event: PointerEvent) => {
-      clearDragState(event.pointerId)
-    }
+      clearDragState(event.pointerId);
+    };
 
-    canvasFrame.addEventListener('pointerdown', handlePointerDown)
-    canvasFrame.addEventListener('pointermove', handlePointerMove)
-    canvasFrame.addEventListener('pointerup', handlePointerUp)
-    canvasFrame.addEventListener('pointercancel', handlePointerCancel)
+    canvasFrame.addEventListener("pointerdown", handlePointerDown);
+    canvasFrame.addEventListener("pointermove", handlePointerMove);
+    canvasFrame.addEventListener("pointerup", handlePointerUp);
+    canvasFrame.addEventListener("pointercancel", handlePointerCancel);
 
     return () => {
-      canvasFrame.removeEventListener('pointerdown', handlePointerDown)
-      canvasFrame.removeEventListener('pointermove', handlePointerMove)
-      canvasFrame.removeEventListener('pointerup', handlePointerUp)
-      canvasFrame.removeEventListener('pointercancel', handlePointerCancel)
-    }
-  }, [cameraState, onCameraChange, sceneMode])
+      canvasFrame.removeEventListener("pointerdown", handlePointerDown);
+      canvasFrame.removeEventListener("pointermove", handlePointerMove);
+      canvasFrame.removeEventListener("pointerup", handlePointerUp);
+      canvasFrame.removeEventListener("pointercancel", handlePointerCancel);
+    };
+  }, [cameraState, onCameraChange, sceneMode]);
 
   useEffect(() => {
-    const canvasFrame = canvasFrameRef.current
+    const canvasFrame = canvasFrameRef.current;
     if (!canvasFrame) {
-      return
+      return;
     }
 
-    const clampDistance = (distance: number) => Math.max(1.2, Math.min(40, distance))
+    const clampDistance = (distance: number) =>
+      Math.max(1.2, Math.min(40, distance));
 
     const handleWheel = (event: WheelEvent) => {
-      if (sceneMode !== 'model') {
-        return
+      if (sceneMode !== "model") {
+        return;
       }
 
-      event.preventDefault()
-      const zoomFactor = Math.exp(event.deltaY * 0.0015)
+      event.preventDefault();
+      const zoomFactor = Math.exp(event.deltaY * 0.0015);
 
       onCameraChange({
         ...cameraState,
         distance: clampDistance(cameraState.distance * zoomFactor),
-      })
-    }
+      });
+    };
 
-    canvasFrame.addEventListener('wheel', handleWheel, { passive: false })
+    canvasFrame.addEventListener("wheel", handleWheel, { passive: false });
 
     return () => {
-      canvasFrame.removeEventListener('wheel', handleWheel)
-    }
-  }, [cameraState, onCameraChange, sceneMode])
+      canvasFrame.removeEventListener("wheel", handleWheel);
+    };
+  }, [cameraState, onCameraChange, sceneMode]);
 
   return (
     <section className="viewport-panel">
@@ -482,76 +468,26 @@ export function ViewportPanel({
         <p className="panel__eyebrow">Viewport</p>
       </div>
 
-      <div className="viewport-toolbar">
-        <div className="viewport-toolbar__group">
-          <button
-            type="button"
-            className={`viewport-mode-button ${sceneMode === 'screen' ? 'viewport-mode-button--active' : ''}`}
-            onClick={() => onSceneModeChange('screen')}
-          >
-            Screen
-          </button>
-          <button
-            type="button"
-            className={`viewport-mode-button ${sceneMode === 'model' ? 'viewport-mode-button--active' : ''}`}
-            onClick={() => onSceneModeChange('model')}
-          >
-            Model
-          </button>
-        </div>
-
-        <label className="viewport-toolbar__select">
-          <span>Geometry</span>
-          <select
-            value={geometryId}
-            onChange={(event) => onGeometryChange(event.target.value as GeometryPreviewId)}
-            disabled={sceneMode !== 'model' || modelAsset !== null}
-          >
-            {geometryOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="viewport-toolbar__select">
-          <span>Blending</span>
-          <select
-            value={blendMode}
-            onChange={(event) => onBlendModeChange(event.target.value as BlendMode)}
-          >
-            <option value="opaque">Opaque</option>
-            <option value="alpha">Alpha</option>
-            <option value="additive">Additive</option>
-          </select>
-        </label>
-
-        <label className="viewport-toolbar__select">
-          <span>Resolution</span>
-          <select
-            value={String(resolutionScale)}
-            onChange={(event) => onResolutionScaleChange(Number(event.target.value) as ResolutionScale)}
-          >
-            <option value="0.5">50%</option>
-            <option value="0.75">75%</option>
-            <option value="1">100%</option>
-          </select>
-        </label>
-      </div>
-
       <div className="model-upload-card">
         <div className="model-upload-card__header">
           <strong>FBX Import</strong>
           {modelAsset ? (
-            <button type="button" className="viewport-controls__reset" onClick={onModelClear}>
+            <button
+              type="button"
+              className="viewport-controls__reset"
+              onClick={onModelClear}
+            >
               Clear
             </button>
           ) : null}
         </div>
 
         <label className="texture-slot">
-          <span>{isUploadingModel ? 'FBX 로딩 중' : 'FBX와 관련 텍스처 업로드'}</span>
+          <span>
+            {isUploadingModel
+              ? "FBX를 불러오는 중입니다."
+              : "FBX와 관련 텍스처를 업로드"}
+          </span>
           <input
             type="file"
             accept=".fbx,image/png,image/jpeg,image/webp"
@@ -606,50 +542,114 @@ export function ViewportPanel({
           </ul>
         ) : null}
 
-        {modelLoadError ? <p className="model-upload-card__error">{modelLoadError}</p> : null}
+        {modelLoadError ? (
+          <p className="model-upload-card__error">{modelLoadError}</p>
+        ) : null}
+      </div>
+
+      <div className="viewport-toolbar">
+        <div className="viewport-toolbar__group">
+          <button
+            type="button"
+            className={`viewport-mode-button ${sceneMode === "screen" ? "viewport-mode-button--active" : ""}`}
+            onClick={() => onSceneModeChange("screen")}
+          >
+            Screen
+          </button>
+          <button
+            type="button"
+            className={`viewport-mode-button ${sceneMode === "model" ? "viewport-mode-button--active" : ""}`}
+            onClick={() => onSceneModeChange("model")}
+          >
+            Model
+          </button>
+        </div>
+
+        <label className="viewport-toolbar__select">
+          <span>Geometry</span>
+          <select
+            value={geometryId}
+            onChange={(event) =>
+              onGeometryChange(event.target.value as GeometryPreviewId)
+            }
+            disabled={sceneMode !== "model" || modelAsset !== null}
+          >
+            {geometryOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="viewport-toolbar__select">
+          <span>Src Blend</span>
+          <select
+            value={blendPresetState.src}
+            onChange={(event) =>
+              onBlendPresetChange("src", event.target.value as BlendPreset)
+            }
+          >
+            <option value="opaque">Opaque</option>
+            <option value="alpha">Alpha</option>
+            <option value="additive">Additive</option>
+          </select>
+        </label>
+
+        <label className="viewport-toolbar__select">
+          <span>Dst Blend</span>
+          <select
+            value={blendPresetState.dst}
+            onChange={(event) =>
+              onBlendPresetChange("dst", event.target.value as BlendPreset)
+            }
+          >
+            <option value="opaque">Opaque</option>
+            <option value="alpha">Alpha</option>
+            <option value="additive">Additive</option>
+          </select>
+        </label>
+
+        <label className="viewport-toolbar__select">
+          <span>Resolution</span>
+          <select
+            value={String(resolutionScale)}
+            onChange={(event) =>
+              onResolutionScaleChange(
+                Number(event.target.value) as ResolutionScale,
+              )
+            }
+          >
+            <option value="0.5">50%</option>
+            <option value="0.75">75%</option>
+            <option value="1">100%</option>
+          </select>
+        </label>
       </div>
 
       <div
         ref={canvasFrameRef}
         className={`viewport-panel__canvas-frame ${
-          sceneMode === 'model'
+          sceneMode === "model"
             ? isOrbitDragging
-              ? 'viewport-panel__canvas-frame--dragging'
-              : 'viewport-panel__canvas-frame--orbit'
-            : ''
+              ? "viewport-panel__canvas-frame--dragging"
+              : "viewport-panel__canvas-frame--orbit"
+            : ""
         }`}
+        tabIndex={0}
+        onKeyDown={handleViewportKeyDown}
       >
-        {sceneMode === 'model' ? (
-          <>
-            <svg className="viewport-gizmo" viewBox="0 0 100 100" aria-hidden="true">
-              {gizmoAxes.map((axis) => (
-                <g key={axis.id}>
-                  <line
-                    x1={axis.center.x}
-                    y1={axis.center.y}
-                    x2={axis.end.x}
-                    y2={axis.end.y}
-                    stroke={axis.color}
-                    strokeWidth="4"
-                    strokeLinecap="round"
-                  />
-                  <circle cx={axis.end.x} cy={axis.end.y} r="6.5" fill={axis.color} />
-                  <text x={axis.end.x} y={axis.end.y} dy="2.2" textAnchor="middle">
-                    {axis.label}
-                  </text>
-                </g>
-              ))}
-            </svg>
-          </>
-        ) : null}
-
         <canvas ref={canvasRef} className="viewport-panel__canvas" />
       </div>
 
       <div className="viewport-controls">
         <div className="viewport-controls__header">
           <strong>Viewport Controls</strong>
-          <button type="button" className="viewport-controls__reset" onClick={handleCameraReset}>
+          <button
+            type="button"
+            className="viewport-controls__reset"
+            onClick={handleCameraReset}
+          >
             Reset
           </button>
         </div>
@@ -663,8 +663,8 @@ export function ViewportPanel({
               max={3.14}
               step={0.01}
               value={cameraState.yaw}
-              onChange={handleCameraAxisChange('yaw')}
-              disabled={sceneMode !== 'model'}
+              onChange={handleCameraAxisChange("yaw")}
+              disabled={sceneMode !== "model"}
             />
           </label>
           <label>
@@ -675,8 +675,8 @@ export function ViewportPanel({
               max={1.2}
               step={0.01}
               value={cameraState.pitch}
-              onChange={handleCameraAxisChange('pitch')}
-              disabled={sceneMode !== 'model'}
+              onChange={handleCameraAxisChange("pitch")}
+              disabled={sceneMode !== "model"}
             />
           </label>
           <label>
@@ -687,8 +687,8 @@ export function ViewportPanel({
               max={24}
               step={0.05}
               value={cameraState.distance}
-              onChange={handleCameraAxisChange('distance')}
-              disabled={sceneMode !== 'model'}
+              onChange={handleCameraAxisChange("distance")}
+              disabled={sceneMode !== "model"}
             />
           </label>
         </div>
@@ -699,7 +699,11 @@ export function ViewportPanel({
       <dl className="viewport-panel__facts">
         <div>
           <dt>해상도</dt>
-          <dd>{state.snapshot ? `${state.snapshot.viewportWidth} x ${state.snapshot.viewportHeight}` : '-'}</dd>
+          <dd>
+            {state.snapshot
+              ? `${state.snapshot.viewportWidth} x ${state.snapshot.viewportHeight}`
+              : "-"}
+          </dd>
         </div>
         <div>
           <dt>Mode</dt>
@@ -707,7 +711,7 @@ export function ViewportPanel({
         </div>
         <div>
           <dt>Blend</dt>
-          <dd>{blendMode}</dd>
+          <dd>{`${blendPresetState.src} / ${blendPresetState.dst}`}</dd>
         </div>
         <div>
           <dt>Scale</dt>
@@ -715,17 +719,23 @@ export function ViewportPanel({
         </div>
         <div>
           <dt>Geometry</dt>
-          <dd>{modelAsset ? 'fbx-mesh' : sceneMode === 'screen' ? 'fullscreen-quad' : geometryId}</dd>
+          <dd>
+            {modelAsset
+              ? "fbx-mesh"
+              : sceneMode === "screen"
+                ? "fullscreen-quad"
+                : geometryId}
+          </dd>
         </div>
         <div>
           <dt>Program</dt>
-          <dd>{state.snapshot?.diagnostics.program.success ? '링크 성공' : '실패 유지'}</dd>
+          <dd>{state.snapshot?.diagnostics.program.success ? "링크 성공" : "실패 유지"}</dd>
         </div>
         <div>
           <dt>Tab</dt>
-          <dd>{isPageVisible ? 'active' : 'paused'}</dd>
+          <dd>{isPageVisible ? "active" : "paused"}</dd>
         </div>
       </dl>
     </section>
-  )
+  );
 }

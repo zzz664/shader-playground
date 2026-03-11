@@ -1,5 +1,10 @@
 import type { SerializedTextureAsset } from '../types/projectSnapshot'
-import type { TextureAsset, TextureLoadResult, TextureAssetSourceKind } from '../types/textureAsset'
+import {
+  defaultTextureWrapMode,
+  type TextureAsset,
+  type TextureLoadResult,
+  type TextureAssetSourceKind,
+} from '../types/textureAsset'
 
 function createTextureAssetId() {
   return `texture-${crypto.randomUUID()}`
@@ -73,6 +78,8 @@ export async function loadTextureAsset(
     sourceDataUrl,
     sourceKind: options.sourceKind ?? 'manual',
     ownerModelId: options.ownerModelId ?? null,
+    wrapS: defaultTextureWrapMode,
+    wrapT: defaultTextureWrapMode,
   })
 
   return { asset }
@@ -97,6 +104,8 @@ export async function createTextureAssetFromSerialized(
       sourceDataUrl: serializedAsset.sourceDataUrl,
       sourceKind: serializedAsset.sourceKind,
       ownerModelId: serializedAsset.ownerModelId,
+      wrapS: serializedAsset.wrapS ?? defaultTextureWrapMode,
+      wrapT: serializedAsset.wrapT ?? defaultTextureWrapMode,
       bitmap,
     }
   } catch (error) {
@@ -115,6 +124,8 @@ export function serializeTextureAsset(asset: TextureAsset): SerializedTextureAss
     sourceDataUrl: asset.sourceDataUrl,
     sourceKind: asset.sourceKind,
     ownerModelId: asset.ownerModelId,
+    wrapS: asset.wrapS,
+    wrapT: asset.wrapT,
   }
 }
 

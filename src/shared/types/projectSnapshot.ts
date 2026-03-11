@@ -1,13 +1,14 @@
 import type { MaterialPropertyValue } from './materialProperty'
 import type { ModelBounds, ModelTextureBinding } from './modelAsset'
 import type {
-  BlendMode,
+  BlendPresetState,
   GeometryPreviewId,
+  ModelTransformState,
   ResolutionScale,
   SceneMode,
   ViewportCameraState,
 } from './scenePreview'
-import type { TextureAssetSourceKind } from './textureAsset'
+import type { TextureAssetSourceKind, TextureWrapMode } from './textureAsset'
 
 export interface SerializedTextureAsset {
   id: string
@@ -18,6 +19,8 @@ export interface SerializedTextureAsset {
   sourceDataUrl: string
   sourceKind: TextureAssetSourceKind
   ownerModelId: string | null
+  wrapS?: TextureWrapMode
+  wrapT?: TextureWrapMode
 }
 
 export interface SerializedModelAsset {
@@ -41,9 +44,11 @@ export interface ProjectSnapshot {
   fragmentSource: string
   sceneMode: SceneMode
   geometryId: GeometryPreviewId
-  blendMode: BlendMode
+  blendPresetState?: BlendPresetState
+  blendMode?: 'opaque' | 'alpha' | 'additive'
   resolutionScale: ResolutionScale
   cameraState: ViewportCameraState
+  modelTransform?: ModelTransformState
   materialValues: Record<string, MaterialPropertyValue>
   textureAssets: SerializedTextureAsset[]
   modelAsset: SerializedModelAsset | null

@@ -28,14 +28,18 @@ import type {
 import type { ModelAsset } from "./shared/types/modelAsset";
 import type { ProjectSnapshot } from "./shared/types/projectSnapshot";
 import type { RenderDiagnostics } from "./shared/types/renderDiagnostics";
+import { defaultModelTransformState } from "./shared/types/scenePreview";
+import { defaultBlendPresetState } from "./shared/types/scenePreview";
 import type {
-  BlendMode,
+  BlendPresetState,
   GeometryPreviewId,
+  ModelTransformState,
   ResolutionScale,
   SceneMode,
   ViewportCameraState,
 } from "./shared/types/scenePreview";
 import type { TextureAsset } from "./shared/types/textureAsset";
+import type { TextureWrapMode } from "./shared/types/textureAsset";
 import {
   createTextureAssetFromSerialized,
   disposeTextureAsset,
@@ -119,6 +123,20 @@ function buildProjectSignature(snapshot: ProjectSnapshot) {
   });
 }
 
+function createBlendPresetStateFromLegacyMode(
+  blendMode: ProjectSnapshot["blendMode"],
+): BlendPresetState {
+  if (blendMode === "alpha") {
+    return { src: "alpha", dst: "alpha" };
+  }
+
+  if (blendMode === "additive") {
+    return { src: "additive", dst: "additive" };
+  }
+
+  return { src: "opaque", dst: "opaque" };
+}
+
 function App() {
   const [vertexSource, setVertexSource] = useState(defaultVertexShaderSource);
   const [fragmentSource, setFragmentSource] = useState(
@@ -147,13 +165,18 @@ function App() {
   const [textureLoadError, setTextureLoadError] = useState<string | null>(null);
   const [sceneMode, setSceneMode] = useState<SceneMode>("screen");
   const [geometryId, setGeometryId] = useState<GeometryPreviewId>("cube");
-  const [blendMode, setBlendMode] = useState<BlendMode>("opaque");
+  const [blendPresetState, setBlendPresetState] = useState<BlendPresetState>(
+    defaultBlendPresetState,
+  );
   const [resolutionScale, setResolutionScale] = useState<ResolutionScale>(1);
   const [cameraState, setCameraState] = useState<ViewportCameraState>({
     yaw: 0.6,
     pitch: 0.45,
     distance: 4.8,
   });
+  const [modelTransform, setModelTransform] = useState<ModelTransformState>(
+    defaultModelTransformState,
+  );
   const [modelAsset, setModelAsset] = useState<ModelAsset | null>(null);
   const [modelLoadError, setModelLoadError] = useState<string | null>(null);
   const [projectStatusMessage, setProjectStatusMessage] = useState<
@@ -207,20 +230,22 @@ function App() {
       fragmentSource,
       sceneMode,
       geometryId,
-      blendMode,
+      blendPresetState,
       resolutionScale,
       cameraState,
+      modelTransform,
       materialValues,
       textureAssets: textureAssets.map(serializeTextureAsset),
       modelAsset: serializeModelAsset(modelAsset),
     }),
     [
-      blendMode,
+      blendPresetState,
       cameraState,
       fragmentSource,
       geometryId,
       materialValues,
       modelAsset,
+      modelTransform,
       resolutionScale,
       sceneMode,
       textureAssets,
@@ -254,9 +279,13 @@ function App() {
       setFragmentSource(snapshot.fragmentSource);
       setSceneMode(snapshot.sceneMode);
       setGeometryId(snapshot.geometryId);
-      setBlendMode(snapshot.blendMode);
+      setBlendPresetState(
+        snapshot.blendPresetState ??
+          createBlendPresetStateFromLegacyMode(snapshot.blendMode),
+      );
       setResolutionScale(snapshot.resolutionScale ?? 1);
       setCameraState(snapshot.cameraState);
+      setModelTransform(snapshot.modelTransform ?? defaultModelTransformState);
       setMaterialValues(snapshot.materialValues);
       setModelAsset(restoredModelAsset);
       setTextureLoadError(null);
@@ -475,6 +504,7 @@ function App() {
 
     setModelAsset(null);
     setModelLoadError(null);
+    setModelTransform(defaultModelTransformState);
   };
 
   const handleModelUpload = async (files: File[]) => {
@@ -505,6 +535,7 @@ function App() {
         ]);
       }
 
+      setModelTransform(defaultModelTransformState);
       setModelAsset(nextTaggedModelAsset);
       setSceneMode("model");
       setCameraState((currentState) => ({
@@ -530,6 +561,23 @@ function App() {
   const handleDeleteTexture = (assetId: string) => {
     removeTextureAssetsByIds(new Set([assetId]));
     setProjectStatusMessage("텍스처 자산을 삭제하고 참조를 정리했습니다.");
+  };
+
+  const handleTextureWrapChange = (
+    assetId: string,
+    wrapAxis: "wrapS" | "wrapT",
+    wrapMode: TextureWrapMode,
+  ) => {
+    setTextureAssets((currentAssets) =>
+      currentAssets.map((asset) =>
+        asset.id === assetId
+          ? {
+              ...asset,
+              [wrapAxis]: wrapMode,
+            }
+          : asset,
+      ),
+    );
   };
 
   const handleSaveProject = () => {
@@ -653,17 +701,24 @@ function App() {
             textureAssets={textureAssets}
             sceneMode={sceneMode}
             geometryId={geometryId}
-            blendMode={blendMode}
+            blendPresetState={blendPresetState}
             resolutionScale={resolutionScale}
             cameraState={cameraState}
+            modelTransform={modelTransform}
             modelAsset={modelAsset}
             modelLoadError={modelLoadError}
             compileRequest={compileRequest}
             onSceneModeChange={setSceneMode}
             onGeometryChange={setGeometryId}
-            onBlendModeChange={setBlendMode}
+            onBlendPresetChange={(blendAxis, blendPreset) =>
+              setBlendPresetState((currentState) => ({
+                ...currentState,
+                [blendAxis]: blendPreset,
+              }))
+            }
             onResolutionScaleChange={setResolutionScale}
             onCameraChange={setCameraState}
+            onModelTransformChange={setModelTransform}
             onModelUpload={handleModelUpload}
             onModelClear={clearCurrentModel}
             onCompileResult={handleCompileResult}
@@ -696,6 +751,15 @@ function App() {
             lines={parsedLines}
             onSelectLine={handleSelectDiagnostic}
           />
+
+          <AssetBrowserPanel
+            modelAsset={modelAsset}
+            textureAssets={textureAssets}
+            usedTextureIds={usedTextureIds}
+            onDeleteTexture={handleDeleteTexture}
+            onTextureWrapChange={handleTextureWrapChange}
+            onClearModel={clearCurrentModel}
+          />
         </div>
 
         <aside className="workspace-column workspace-column--inspector">
@@ -706,14 +770,6 @@ function App() {
             textureLoadError={textureLoadError}
             onValueChange={handleMaterialValueChange}
             onTextureUpload={handleTextureUpload}
-          />
-
-          <AssetBrowserPanel
-            modelAsset={modelAsset}
-            textureAssets={textureAssets}
-            usedTextureIds={usedTextureIds}
-            onDeleteTexture={handleDeleteTexture}
-            onClearModel={clearCurrentModel}
           />
         </aside>
       </section>

@@ -1,4 +1,7 @@
 export type TextureAssetSourceKind = 'manual' | 'model'
+export type TextureWrapMode = 'repeat' | 'clamp' | 'mirror'
+
+export const defaultTextureWrapMode: TextureWrapMode = 'repeat'
 
 export interface TextureAsset {
   id: string
@@ -10,6 +13,8 @@ export interface TextureAsset {
   sourceDataUrl: string
   sourceKind: TextureAssetSourceKind
   ownerModelId: string | null
+  wrapS: TextureWrapMode
+  wrapT: TextureWrapMode
   bitmap: ImageBitmap
 }
 

@@ -1,11 +1,16 @@
 import type { ModelAsset } from '../../shared/types/modelAsset'
-import type { TextureAsset } from '../../shared/types/textureAsset'
+import type { TextureAsset, TextureWrapMode } from '../../shared/types/textureAsset'
 
 interface AssetBrowserPanelProps {
   modelAsset: ModelAsset | null
   textureAssets: TextureAsset[]
   usedTextureIds: Set<string>
   onDeleteTexture: (assetId: string) => void
+  onTextureWrapChange: (
+    assetId: string,
+    wrapAxis: 'wrapS' | 'wrapT',
+    wrapMode: TextureWrapMode,
+  ) => void
   onClearModel: () => void
 }
 
@@ -14,6 +19,7 @@ export function AssetBrowserPanel({
   textureAssets,
   usedTextureIds,
   onDeleteTexture,
+  onTextureWrapChange,
   onClearModel,
 }: AssetBrowserPanelProps) {
   return (
@@ -35,11 +41,13 @@ export function AssetBrowserPanel({
         {modelAsset ? (
           <article className="asset-card">
             <strong>{modelAsset.name}</strong>
-            <p>메쉬 {modelAsset.meshCount}개 / 삼각형 {Math.floor(modelAsset.indices.length / 3)}개</p>
-            <p>활성 모델</p>
+            <p>
+              메시 {modelAsset.meshCount}개 / 삼각형 {Math.floor(modelAsset.indices.length / 3)}개
+            </p>
+            <p>현재 모델 프리뷰에 사용 중입니다.</p>
           </article>
         ) : (
-          <p className="asset-browser-panel__empty">현재 활성 모델이 없습니다.</p>
+          <p className="asset-browser-panel__empty">현재 등록된 모델이 없습니다.</p>
         )}
       </div>
 
@@ -61,6 +69,42 @@ export function AssetBrowserPanel({
                   </p>
                   <p>{usedTextureIds.has(asset.id) ? '사용 중' : '미사용'}</p>
                   <p>{asset.sourceKind === 'model' ? '모델 텍스처' : '수동 업로드'}</p>
+                  <div className="asset-card__wrap-grid">
+                    <label>
+                      <span>Wrap S</span>
+                      <select
+                        value={asset.wrapS}
+                        onChange={(event) =>
+                          onTextureWrapChange(
+                            asset.id,
+                            'wrapS',
+                            event.target.value as TextureWrapMode,
+                          )
+                        }
+                      >
+                        <option value="repeat">Repeat</option>
+                        <option value="clamp">Clamp</option>
+                        <option value="mirror">Mirror</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>Wrap T</span>
+                      <select
+                        value={asset.wrapT}
+                        onChange={(event) =>
+                          onTextureWrapChange(
+                            asset.id,
+                            'wrapT',
+                            event.target.value as TextureWrapMode,
+                          )
+                        }
+                      >
+                        <option value="repeat">Repeat</option>
+                        <option value="clamp">Clamp</option>
+                        <option value="mirror">Mirror</option>
+                      </select>
+                    </label>
+                  </div>
                 </div>
                 <button
                   type="button"

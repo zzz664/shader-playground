@@ -1,14 +1,20 @@
 import type { MaterialPropertyDefinition, MaterialPropertyValue } from '../../shared/types/materialProperty'
 import type { ModelAsset, ModelBounds } from '../../shared/types/modelAsset'
 import type { RenderDiagnostics } from '../../shared/types/renderDiagnostics'
+import {
+  defaultBlendPresetState,
+  defaultModelTransformState,
+} from '../../shared/types/scenePreview'
 import type {
-  BlendMode,
+  BlendPreset,
+  BlendPresetState,
   GeometryPreviewId,
+  ModelTransformState,
   ResolutionScale,
   SceneMode,
   ViewportCameraState,
 } from '../../shared/types/scenePreview'
-import type { TextureAsset } from '../../shared/types/textureAsset'
+import type { TextureAsset, TextureWrapMode } from '../../shared/types/textureAsset'
 import { frameModelBounds } from '../model/framing/frameModelBounds'
 import { createShaderProgram } from '../shader/compiler/shaderCompiler'
 import {
@@ -20,10 +26,12 @@ import { defaultFragmentShaderSource, defaultVertexShaderSource } from '../shade
 import { createScreenQuadMesh, getPrimitiveMeshData, PRIMITIVE_VERTEX_STRIDE } from './geometry/primitiveMeshes'
 import { createWebGL2Context } from './gl/webglContext'
 import {
+  createEulerRotationMatrix4,
   createIdentityMatrix4,
   createLookAtMatrix4,
   createPerspectiveMatrix4,
   createTranslationMatrix4,
+  multiplyMatrix4,
 } from './math/matrix4'
 
 interface UploadedMesh {
@@ -114,7 +122,7 @@ export interface RendererStateSnapshot {
   materialValues: Record<string, MaterialPropertyValue>
   sceneMode: SceneMode
   geometryId: GeometryPreviewId
-  blendMode: BlendMode
+  blendPresetState: BlendPresetState
   resolutionScale: ResolutionScale
 }
 
@@ -147,9 +155,16 @@ export class WebGLQuadRenderer {
   private uploadedModelBounds: ModelBounds | null = null
   private sceneMode: SceneMode = 'screen'
   private geometryId: GeometryPreviewId = 'cube'
-  private blendMode: BlendMode = 'opaque'
+  private blendPresetState: BlendPresetState = {
+    src: defaultBlendPresetState.src,
+    dst: defaultBlendPresetState.dst,
+  }
   private resolutionScale: ResolutionScale = 1
   private isViewportActive = true
+  private modelTransform: ModelTransformState = {
+    position: { ...defaultModelTransformState.position },
+    rotation: { ...defaultModelTransformState.rotation },
+  }
   private cameraState: ViewportCameraState = {
     yaw: 0.6,
     pitch: 0.45,
@@ -233,6 +248,12 @@ export class WebGLQuadRenderer {
     }
   }
 
+  restartPlayback() {
+    this.elapsedSeconds = 0
+    this.lastFrameTime = performance.now()
+    this.render(0)
+  }
+
   getSnapshot(): RendererStateSnapshot {
     return {
       diagnostics: this.diagnostics,
@@ -243,7 +264,7 @@ export class WebGLQuadRenderer {
       materialValues: this.materialValues,
       sceneMode: this.sceneMode,
       geometryId: this.geometryId,
-      blendMode: this.blendMode,
+      blendPresetState: this.blendPresetState,
       resolutionScale: this.resolutionScale,
     }
   }
@@ -281,8 +302,9 @@ export class WebGLQuadRenderer {
     this.geometryId = geometryId
   }
 
-  updateBlendMode(blendMode: BlendMode) {
-    this.blendMode = blendMode
+  updateBlendPresetState(blendPresetState: BlendPresetState) {
+    this.blendPresetState = blendPresetState
+    this.render(this.elapsedSeconds)
   }
 
   updateResolutionScale(resolutionScale: ResolutionScale) {
@@ -293,6 +315,11 @@ export class WebGLQuadRenderer {
 
   updateCameraState(cameraState: ViewportCameraState) {
     this.cameraState = cameraState
+  }
+
+  updateModelTransform(modelTransform: ModelTransformState) {
+    this.modelTransform = modelTransform
+    this.render(this.elapsedSeconds)
   }
 
   setViewportActive(isActive: boolean) {
@@ -338,6 +365,9 @@ export class WebGLQuadRenderer {
     assets.forEach((asset) => {
       const existingTexture = this.textureAssets.get(asset.id)
       if (existingTexture) {
+        this.gl.bindTexture(this.gl.TEXTURE_2D, existingTexture)
+        this.applyTextureWrapMode(asset.wrapS, asset.wrapT)
+        this.gl.bindTexture(this.gl.TEXTURE_2D, null)
         return
       }
 
@@ -349,8 +379,7 @@ export class WebGLQuadRenderer {
       this.gl.bindTexture(this.gl.TEXTURE_2D, texture)
       this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MIN_FILTER, this.gl.LINEAR_MIPMAP_LINEAR)
       this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MAG_FILTER, this.gl.LINEAR)
-      this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_S, this.gl.REPEAT)
-      this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_T, this.gl.REPEAT)
+      this.applyTextureWrapMode(asset.wrapS, asset.wrapT)
       this.gl.pixelStorei(this.gl.UNPACK_FLIP_Y_WEBGL, 1)
       this.gl.texImage2D(
         this.gl.TEXTURE_2D,
@@ -405,7 +434,7 @@ export class WebGLQuadRenderer {
     )
     const modelMatrix =
       this.sceneMode === 'model' && this.uploadedModelMesh
-        ? createTranslationMatrix4(0, 1, 0)
+        ? this.createModelTransformMatrix()
         : createIdentityMatrix4()
 
     this.gl.clearColor(0.02, 0.04, 0.08, 1)
@@ -501,28 +530,42 @@ export class WebGLQuadRenderer {
   }
 
   private applyBlendMode() {
-    if (this.blendMode === 'opaque') {
+    if (
+      this.blendPresetState.src === 'opaque' &&
+      this.blendPresetState.dst === 'opaque'
+    ) {
       this.gl.disable(this.gl.BLEND)
       this.gl.depthMask(true)
       return
     }
 
     this.gl.enable(this.gl.BLEND)
+    this.gl.blendEquation(this.gl.FUNC_ADD)
+    this.gl.blendFunc(
+      this.resolveSrcBlendFactor(this.blendPresetState.src),
+      this.resolveDstBlendFactor(this.blendPresetState.dst),
+    )
+    this.gl.depthMask(false)
+  }
 
-    if (this.blendMode === 'alpha') {
-      this.gl.blendEquation(this.gl.FUNC_ADD)
-      this.gl.blendFuncSeparate(
-        this.gl.SRC_ALPHA,
-        this.gl.ONE_MINUS_SRC_ALPHA,
-        this.gl.ONE,
-        this.gl.ONE_MINUS_SRC_ALPHA,
-      )
-    } else {
-      this.gl.blendEquation(this.gl.FUNC_ADD)
-      this.gl.blendFunc(this.gl.SRC_ALPHA, this.gl.ONE)
+  private resolveSrcBlendFactor(blendPreset: BlendPreset) {
+    if (blendPreset === 'alpha') {
+      return this.gl.SRC_ALPHA
     }
 
-    this.gl.depthMask(false)
+    return this.gl.ONE
+  }
+
+  private resolveDstBlendFactor(blendPreset: BlendPreset) {
+    if (blendPreset === 'opaque') {
+      return this.gl.ZERO
+    }
+
+    if (blendPreset === 'alpha') {
+      return this.gl.ONE_MINUS_SRC_ALPHA
+    }
+
+    return this.gl.ONE
   }
 
   private syncMaterialProperties() {
@@ -913,6 +956,31 @@ export class WebGLQuadRenderer {
     return texture
   }
 
+  private applyTextureWrapMode(wrapS: TextureWrapMode, wrapT: TextureWrapMode) {
+    this.gl.texParameteri(
+      this.gl.TEXTURE_2D,
+      this.gl.TEXTURE_WRAP_S,
+      this.resolveTextureWrapMode(wrapS),
+    )
+    this.gl.texParameteri(
+      this.gl.TEXTURE_2D,
+      this.gl.TEXTURE_WRAP_T,
+      this.resolveTextureWrapMode(wrapT),
+    )
+  }
+
+  private resolveTextureWrapMode(wrapMode: TextureWrapMode) {
+    if (wrapMode === 'clamp') {
+      return this.gl.CLAMP_TO_EDGE
+    }
+
+    if (wrapMode === 'mirror') {
+      return this.gl.MIRRORED_REPEAT
+    }
+
+    return this.gl.REPEAT
+  }
+
   private getCameraPosition(target: [number, number, number]): [number, number, number] {
     const distance = Math.max(this.cameraState.distance, 1.6)
     const pitch = this.cameraState.pitch
@@ -924,5 +992,16 @@ export class WebGLQuadRenderer {
       target[1] + Math.sin(pitch) * distance,
       target[2] + Math.cos(yaw) * radius,
     ]
+  }
+
+  private createModelTransformMatrix() {
+    const translationMatrix = createTranslationMatrix4(
+      this.modelTransform.position.x,
+      this.modelTransform.position.y,
+      this.modelTransform.position.z,
+    )
+    const rotationMatrix = createEulerRotationMatrix4(this.modelTransform.rotation)
+
+    return multiplyMatrix4(translationMatrix, rotationMatrix)
   }
 }
