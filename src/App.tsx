@@ -14,6 +14,7 @@ import {
   ShaderEditorPanel,
   type DiagnosticFocusTarget,
 } from "./features/editor/ShaderEditorPanel";
+import { GuideView } from "./features/guide/GuideView";
 import { MaterialInspectorPanel } from "./features/inspector/MaterialInspectorPanel";
 import { ModelImportPanel } from "./features/model/ModelImportPanel";
 import { ShaderPresetPanel } from "./features/presets/ShaderPresetPanel";
@@ -68,6 +69,8 @@ import {
   saveProjectSnapshot,
   serializeModelAsset,
 } from "./shared/utils/projectPersistence";
+import userGuideMarkdown from "../docs/user_webapp_guide.md?raw";
+import inspectorGuideMarkdown from "../docs/editor/inspector_comment_metadata_guide.md?raw";
 
 function buildAutoTextureBindings(
   currentValues: Record<string, MaterialPropertyValue>,
@@ -163,6 +166,9 @@ function createBlendPresetStateFromLegacyMode(
 }
 
 function App() {
+  const [appView, setAppView] = useState<
+    "playground" | "guide" | "comment-guide"
+  >("playground");
   const [vertexSource, setVertexSource] = useState(defaultVertexShaderSource);
   const [fragmentSource, setFragmentSource] = useState(
     defaultFragmentShaderSource,
@@ -906,7 +912,58 @@ function App() {
   };
 
   return (
-    <main className="app-shell">
+    <>
+      <header className="app-header">
+        <div className="app-header__brand">
+          <p className="panel__eyebrow">Shader Playground</p>
+          <strong>웹 셰이더 플레이그라운드</strong>
+        </div>
+
+        <div className="app-header__tabs">
+          <button
+            type="button"
+            className={`app-header__tab ${appView === "playground" ? "app-header__tab--active" : ""}`}
+            onClick={() => setAppView("playground")}
+          >
+            Playground
+          </button>
+          <button
+            type="button"
+            className={`app-header__tab ${appView === "guide" ? "app-header__tab--active" : ""}`}
+            onClick={() => setAppView("guide")}
+          >
+            이용 가이드
+          </button>
+          <button
+            type="button"
+            className={`app-header__tab ${appView === "comment-guide" ? "app-header__tab--active" : ""}`}
+            onClick={() => setAppView("comment-guide")}
+          >
+            주석 가이드
+          </button>
+        </div>
+      </header>
+
+      {appView === "guide" ? (
+        <main className="app-shell">
+          <GuideView
+            eyebrow="Guide"
+            title="웹앱 이용 가이드"
+            description="셰이더 플레이그라운드의 주요 기능과 기본 작업 흐름을 정리한 사용자용 안내 문서입니다."
+            markdown={userGuideMarkdown}
+          />
+        </main>
+      ) : appView === "comment-guide" ? (
+        <main className="app-shell">
+          <GuideView
+            eyebrow="Comment Guide"
+            title="인스펙터 주석 이용 가이드"
+            description="uniform 주석 메타데이터를 사용해 인스펙터 표시 이름, 그룹, UI 종류와 범위를 제어하는 방법을 정리한 문서입니다."
+            markdown={inspectorGuideMarkdown}
+          />
+        </main>
+      ) : (
+        <main className="app-shell">
       <section className="topbar-grid">
         <ModelImportPanel
           modelAsset={modelAsset}
@@ -1035,7 +1092,9 @@ function App() {
           />
         </aside>
       </section>
-    </main>
+        </main>
+      )}
+    </>
   );
 }
 
