@@ -42,7 +42,7 @@ export interface ModelTransformState {
 export const defaultModelTransformState: ModelTransformState = {
   position: {
     x: 0,
-    y: 1,
+    y: 0,
     z: 0,
   },
   rotation: {
