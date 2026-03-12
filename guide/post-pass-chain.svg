@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="420" viewBox="0 0 1280 420" fill="none">
+  <rect width="1280" height="420" fill="#111114"/>
+  <rect x="60" y="140" width="180" height="120" rx="3" fill="#1c1c1f" stroke="#3f3f46"/>
+  <rect x="310" y="140" width="180" height="120" rx="3" fill="#1c1c1f" stroke="#3f3f46"/>
+  <rect x="560" y="140" width="180" height="120" rx="3" fill="#1c1c1f" stroke="#3f3f46"/>
+  <rect x="810" y="140" width="180" height="120" rx="3" fill="#1c1c1f" stroke="#3f3f46"/>
+  <rect x="1060" y="140" width="160" height="120" rx="3" fill="#1c1c1f" stroke="#3f3f46"/>
+  <path d="M240 200H310" stroke="#a1a1aa" stroke-width="2"/>
+  <path d="M490 200H560" stroke="#a1a1aa" stroke-width="2"/>
+  <path d="M740 200H810" stroke="#a1a1aa" stroke-width="2"/>
+  <path d="M990 200H1060" stroke="#a1a1aa" stroke-width="2"/>
+  <path d="M298 194L310 200L298 206" stroke="#a1a1aa" stroke-width="2"/>
+  <path d="M548 194L560 200L548 206" stroke="#a1a1aa" stroke-width="2"/>
+  <path d="M798 194L810 200L798 206" stroke="#a1a1aa" stroke-width="2"/>
+  <path d="M1048 194L1060 200L1048 206" stroke="#a1a1aa" stroke-width="2"/>
+  <text x="150" y="206" fill="#f59e0b" font-family="Segoe UI, Noto Sans KR, sans-serif" font-size="24" text-anchor="middle">Scene</text>
+  <text x="400" y="206" fill="#f59e0b" font-family="Segoe UI, Noto Sans KR, sans-serif" font-size="24" text-anchor="middle">Pass 1</text>
+  <text x="650" y="206" fill="#f59e0b" font-family="Segoe UI, Noto Sans KR, sans-serif" font-size="24" text-anchor="middle">Pass 2</text>
+  <text x="900" y="206" fill="#f59e0b" font-family="Segoe UI, Noto Sans KR, sans-serif" font-size="24" text-anchor="middle">Pass N</text>
+  <text x="1140" y="206" fill="#f59e0b" font-family="Segoe UI, Noto Sans KR, sans-serif" font-size="24" text-anchor="middle">Screen</text>
+  <text x="400" y="290" fill="#d4d4d8" font-family="Segoe UI, Noto Sans KR, sans-serif" font-size="18" text-anchor="middle">uSceneColor</text>
+  <text x="650" y="290" fill="#d4d4d8" font-family="Segoe UI, Noto Sans KR, sans-serif" font-size="18" text-anchor="middle">uPrevPassColor</text>
+  <text x="900" y="290" fill="#d4d4d8" font-family="Segoe UI, Noto Sans KR, sans-serif" font-size="18" text-anchor="middle">uPass1Color, uPass2Color</text>
+</svg>

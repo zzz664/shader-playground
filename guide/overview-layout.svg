@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" fill="none">
+  <rect width="1280" height="720" fill="#111114"/>
+  <rect x="24" y="24" width="1232" height="86" rx="3" fill="#1c1c1f" stroke="#3f3f46"/>
+  <rect x="40" y="40" width="280" height="54" rx="3" fill="#252529"/>
+  <rect x="332" y="40" width="520" height="54" rx="3" fill="#252529"/>
+  <rect x="864" y="40" width="376" height="54" rx="3" fill="#252529"/>
+  <rect x="24" y="128" width="320" height="568" rx="3" fill="#1c1c1f" stroke="#3f3f46"/>
+  <rect x="360" y="128" width="592" height="360" rx="3" fill="#1c1c1f" stroke="#3f3f46"/>
+  <rect x="360" y="504" width="592" height="92" rx="3" fill="#1c1c1f" stroke="#3f3f46"/>
+  <rect x="360" y="612" width="592" height="84" rx="3" fill="#1c1c1f" stroke="#3f3f46"/>
+  <rect x="968" y="128" width="288" height="568" rx="3" fill="#1c1c1f" stroke="#3f3f46"/>
+  <text x="180" y="74" fill="#f59e0b" font-family="Segoe UI, Noto Sans KR, sans-serif" font-size="20" text-anchor="middle">FBX Import</text>
+  <text x="592" y="74" fill="#f59e0b" font-family="Segoe UI, Noto Sans KR, sans-serif" font-size="20" text-anchor="middle">Project</text>
+  <text x="1052" y="74" fill="#f59e0b" font-family="Segoe UI, Noto Sans KR, sans-serif" font-size="20" text-anchor="middle">Compile</text>
+  <text x="184" y="162" fill="#f59e0b" font-family="Segoe UI, Noto Sans KR, sans-serif" font-size="20" text-anchor="middle">Viewport</text>
+  <text x="656" y="162" fill="#f59e0b" font-family="Segoe UI, Noto Sans KR, sans-serif" font-size="20" text-anchor="middle">Editor</text>
+  <text x="656" y="538" fill="#f59e0b" font-family="Segoe UI, Noto Sans KR, sans-serif" font-size="20" text-anchor="middle">Console</text>
+  <text x="656" y="646" fill="#f59e0b" font-family="Segoe UI, Noto Sans KR, sans-serif" font-size="20" text-anchor="middle">Asset Browser</text>
+  <text x="1112" y="162" fill="#f59e0b" font-family="Segoe UI, Noto Sans KR, sans-serif" font-size="20" text-anchor="middle">Inspector</text>
+</svg>
