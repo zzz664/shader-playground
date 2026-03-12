@@ -20,6 +20,7 @@ import type {
   GeometryPreviewId,
   ModelTransformState,
   ResolutionScale,
+  SceneRenderTargetFormat,
   SceneMode,
   ViewportCameraState,
 } from "../../shared/types/scenePreview";
@@ -42,6 +43,7 @@ interface ViewportPanelProps {
   geometryId: GeometryPreviewId;
   blendPresetState: BlendPresetState;
   postProcessEnabled: boolean;
+  sceneRenderTargetFormat: SceneRenderTargetFormat;
   resolutionScale: ResolutionScale;
   cameraState: ViewportCameraState;
   modelTransform: ModelTransformState;
@@ -83,6 +85,7 @@ export function ViewportPanel({
   geometryId,
   blendPresetState,
   postProcessEnabled,
+  sceneRenderTargetFormat,
   resolutionScale,
   cameraState,
   modelTransform,
@@ -119,6 +122,7 @@ export function ViewportPanel({
     geometryId,
     blendPresetState,
     postProcessEnabled,
+    sceneRenderTargetFormat,
     resolutionScale,
     cameraState,
     modelTransform,
@@ -177,6 +181,9 @@ export function ViewportPanel({
       );
       renderer.updatePostProcessEnabled(
         initialPreviewRef.current.postProcessEnabled,
+      );
+      renderer.updateSceneRenderTargetFormat(
+        initialPreviewRef.current.sceneRenderTargetFormat,
       );
       renderer.updateResolutionScale(initialPreviewRef.current.resolutionScale);
       renderer.updateCameraState(initialPreviewRef.current.cameraState);
@@ -269,6 +276,11 @@ export function ViewportPanel({
     rendererRef.current?.updatePostProcessEnabled(postProcessEnabled);
     scheduleSnapshotStateSync();
   }, [postProcessEnabled, scheduleSnapshotStateSync]);
+
+  useEffect(() => {
+    rendererRef.current?.updateSceneRenderTargetFormat(sceneRenderTargetFormat);
+    scheduleSnapshotStateSync();
+  }, [sceneRenderTargetFormat, scheduleSnapshotStateSync]);
 
   useEffect(() => {
     rendererRef.current?.updateResolutionScale(resolutionScale);

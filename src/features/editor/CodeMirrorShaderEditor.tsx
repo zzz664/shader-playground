@@ -23,8 +23,12 @@ import {
 } from '@codemirror/view'
 import { tags } from '@lezer/highlight'
 import { useEffect, useMemo, useRef, type ReactNode } from 'react'
-import type { PostProcessPass } from '../../shared/types/postProcess'
+import type {
+  PostProcessPass,
+  PostProcessRenderTargetFormat,
+} from '../../shared/types/postProcess'
 import type { ParsedDiagnosticLine } from '../../shared/types/renderDiagnostics'
+import type { SceneRenderTargetFormat } from '../../shared/types/scenePreview'
 import type { DiagnosticFocusTarget } from './ShaderEditorPanel'
 import {
   builtinUniforms,
@@ -40,6 +44,7 @@ interface CodeMirrorShaderEditorProps {
   activeStage: ShaderEditorStage
   vertexSource: string
   fragmentSource: string
+  sceneRenderTargetFormat: SceneRenderTargetFormat
   postProcessSource: string
   postProcessPasses: PostProcessPass[]
   activePostProcessPassId: string | null
@@ -51,12 +56,17 @@ interface CodeMirrorShaderEditorProps {
   onStageChange: (stage: ShaderEditorStage) => void
   onVertexChange: (nextValue: string) => void
   onFragmentChange: (nextValue: string) => void
+  onSceneRenderTargetFormatChange: (format: SceneRenderTargetFormat) => void
   onPostProcessChange: (nextValue: string) => void
   onActivePostProcessPassChange: (passId: string) => void
   onAddPostProcessPass: () => void
   onRemovePostProcessPass: (passId: string) => void
   onRenamePostProcessPass: (passId: string, name: string) => void
   onMovePostProcessPass: (passId: string, direction: 'up' | 'down') => void
+  onUpdatePostProcessPassFormat: (
+    passId: string,
+    format: PostProcessRenderTargetFormat,
+  ) => void
 }
 
 const languageCompartment = new Compartment()
@@ -258,6 +268,7 @@ export default function CodeMirrorShaderEditor({
   activeStage,
   vertexSource,
   fragmentSource,
+  sceneRenderTargetFormat,
   postProcessSource,
   postProcessPasses,
   activePostProcessPassId,
@@ -269,12 +280,14 @@ export default function CodeMirrorShaderEditor({
   onStageChange,
   onVertexChange,
   onFragmentChange,
+  onSceneRenderTargetFormatChange,
   onPostProcessChange,
   onActivePostProcessPassChange,
   onAddPostProcessPass,
   onRemovePostProcessPass,
   onRenamePostProcessPass,
   onMovePostProcessPass,
+  onUpdatePostProcessPassFormat,
 }: CodeMirrorShaderEditorProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const editorViewRef = useRef<EditorView | null>(null)
@@ -626,6 +639,21 @@ export default function CodeMirrorShaderEditor({
                 }
                 placeholder="Pass 이름"
               />
+              <label className="editor-panel__post-pass-format">
+                <span>Target</span>
+                <select
+                  value={activePostProcessPass.renderTargetFormat}
+                  onChange={(event) =>
+                    onUpdatePostProcessPassFormat(
+                      activePostProcessPass.id,
+                      event.target.value as PostProcessRenderTargetFormat,
+                    )
+                  }
+                >
+                  <option value="rgba8">RGBA8</option>
+                  <option value="rgba16f">RGBA16F</option>
+                </select>
+              </label>
               <button
                 type="button"
                 className="editor-panel__post-pass-button"
@@ -650,6 +678,25 @@ export default function CodeMirrorShaderEditor({
               </button>
             </div>
           ) : null}
+        </div>
+      ) : null}
+
+      {activeStage === 'fragment' ? (
+        <div className="editor-panel__fragment-target">
+          <label className="editor-panel__post-pass-format">
+            <span>Target</span>
+            <select
+              value={sceneRenderTargetFormat}
+              onChange={(event) =>
+                onSceneRenderTargetFormatChange(
+                  event.target.value as SceneRenderTargetFormat,
+                )
+              }
+            >
+              <option value="rgba8">RGBA8</option>
+              <option value="rgba16f">RGBA16F</option>
+            </select>
+          </label>
         </div>
       ) : null}
 

@@ -34,17 +34,20 @@ import { defaultModelTransformState } from "./shared/types/scenePreview";
 import {
   defaultBlendPresetState,
   defaultPostProcessEnabled,
+  defaultSceneRenderTargetFormat,
 } from "./shared/types/scenePreview";
 import {
   createDefaultPostProcessPass,
   defaultPostProcessChainState,
   type PostProcessChainState,
+  type PostProcessRenderTargetFormat,
 } from "./shared/types/postProcess";
 import type {
   BlendPresetState,
   GeometryPreviewId,
   ModelTransformState,
   ResolutionScale,
+  SceneRenderTargetFormat,
   SceneMode,
   ViewportCameraState,
 } from "./shared/types/scenePreview";
@@ -139,6 +142,7 @@ function buildPostProcessCompileSignature(chainState: PostProcessChainState) {
     chainState.passes.map((pass) => ({
       id: pass.id,
       enabled: pass.enabled,
+      renderTargetFormat: pass.renderTargetFormat,
       source: pass.source,
     })),
   );
@@ -194,6 +198,8 @@ function App() {
   const [postProcessEnabled, setPostProcessEnabled] = useState(
     defaultPostProcessEnabled,
   );
+  const [sceneRenderTargetFormat, setSceneRenderTargetFormat] =
+    useState<SceneRenderTargetFormat>(defaultSceneRenderTargetFormat);
   const [resolutionScale, setResolutionScale] = useState<ResolutionScale>(1);
   const [cameraState, setCameraState] = useState<ViewportCameraState>({
     yaw: 0.6,
@@ -284,6 +290,7 @@ function App() {
       postProcessPasses: postProcessChainState.passes,
       activePostProcessPassId,
       postProcessEnabled,
+      sceneRenderTargetFormat,
       sceneMode,
       geometryId,
       blendPresetState,
@@ -306,6 +313,7 @@ function App() {
       activePostProcessPassId,
       postProcessChainState,
       postProcessEnabled,
+      sceneRenderTargetFormat,
       resolutionScale,
       sceneMode,
       textureAssets,
@@ -348,6 +356,7 @@ function App() {
           null,
       );
       setPostProcessEnabled(normalizedSnapshot.postProcessEnabled);
+      setSceneRenderTargetFormat(normalizedSnapshot.sceneRenderTargetFormat);
       setSceneMode(normalizedSnapshot.sceneMode);
       setGeometryId(normalizedSnapshot.geometryId);
       setBlendPresetState(
@@ -703,6 +712,27 @@ function App() {
     }
   };
 
+  const handleUpdatePostProcessPassFormat = (
+    passId: string,
+    format: PostProcessRenderTargetFormat,
+  ) => {
+    setPostProcessChainState((currentState) => ({
+      ...currentState,
+      passes: currentState.passes.map((pass) =>
+        pass.id === passId
+          ? {
+              ...pass,
+              renderTargetFormat: format,
+            }
+          : pass,
+      ),
+    }));
+
+    if (autoCompile && hasMountedRef.current) {
+      setIsCompiling(true);
+    }
+  };
+
   const handleModelUpload = async (files: File[]) => {
     setModelLoadError(null);
     setIsUploadingModel(true);
@@ -913,6 +943,7 @@ function App() {
             key={`viewport-post-${postProcessEnabled ? "on" : "off"}`}
             vertexSource={vertexSource}
             fragmentSource={fragmentSource}
+            sceneRenderTargetFormat={sceneRenderTargetFormat}
             postProcessSource={activePostProcessSource}
             postProcessPasses={postProcessChainState.passes}
             materialValues={materialValues}
@@ -947,6 +978,7 @@ function App() {
             activeStage={activeEditorStage}
             vertexSource={vertexSource}
             fragmentSource={fragmentSource}
+            sceneRenderTargetFormat={sceneRenderTargetFormat}
             postProcessSource={activePostProcessSource}
             postProcessPasses={postProcessChainState.passes}
             activePostProcessPassId={activePostProcessPassId}
@@ -965,12 +997,14 @@ function App() {
             onStageChange={setActiveEditorStage}
             onVertexChange={handleVertexSourceChange}
             onFragmentChange={handleFragmentSourceChange}
+            onSceneRenderTargetFormatChange={setSceneRenderTargetFormat}
             onPostProcessChange={handlePostProcessSourceChange}
             onActivePostProcessPassChange={setActivePostProcessPassId}
             onAddPostProcessPass={handleAddPostProcessPass}
             onRemovePostProcessPass={handleRemovePostProcessPass}
             onRenamePostProcessPass={handleRenamePostProcessPass}
             onMovePostProcessPass={handleMovePostProcessPass}
+            onUpdatePostProcessPassFormat={handleUpdatePostProcessPassFormat}
           />
 
           <ShaderConsolePanel
@@ -992,6 +1026,7 @@ function App() {
         <aside className="workspace-column workspace-column--inspector">
           <MaterialInspectorPanel
             properties={materialProperties}
+            postProcessPasses={postProcessChainState.passes}
             values={materialValues}
             textureAssets={textureAssets}
             textureLoadError={textureLoadError}

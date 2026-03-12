@@ -5,6 +5,7 @@ import type {
   GeometryPreviewId,
   ModelTransformState,
   ResolutionScale,
+  SceneRenderTargetFormat,
   SceneMode,
   ViewportCameraState,
 } from './scenePreview'
@@ -47,6 +48,7 @@ export interface ProjectSnapshot {
   postProcessPasses?: PostProcessPass[]
   activePostProcessPassId?: string | null
   postProcessEnabled?: boolean
+  sceneRenderTargetFormat?: SceneRenderTargetFormat
   sceneMode: SceneMode
   geometryId: GeometryPreviewId
   blendPresetState?: BlendPresetState
@@ -64,6 +66,7 @@ export interface NormalizedProjectSnapshot extends ProjectSnapshot {
   postProcessPasses: PostProcessPass[]
   activePostProcessPassId: string | null
   postProcessEnabled: boolean
+  sceneRenderTargetFormat: SceneRenderTargetFormat
   blendPresetState: BlendPresetState
   modelTransform: ModelTransformState
 }

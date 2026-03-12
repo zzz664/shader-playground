@@ -1,12 +1,14 @@
+import { useMemo, useState } from 'react'
 import type {
   MaterialPropertyDefinition,
-  MaterialPropertyScope,
   MaterialPropertyValue,
 } from '../../shared/types/materialProperty'
+import type { PostProcessPass } from '../../shared/types/postProcess'
 import type { TextureAsset } from '../../shared/types/textureAsset'
 
 interface MaterialInspectorPanelProps {
   properties: MaterialPropertyDefinition[]
+  postProcessPasses: PostProcessPass[]
   values: Record<string, MaterialPropertyValue>
   textureAssets: TextureAsset[]
   textureLoadError: string | null
@@ -19,10 +21,11 @@ interface PropertyGroup {
   properties: MaterialPropertyDefinition[]
 }
 
-interface PostPassSection {
-  passId: string
-  passName: string
+interface InspectorTab {
+  id: string
+  label: string
   groups: PropertyGroup[]
+  propertyCount: number
 }
 
 function getDisplayLabel(property: MaterialPropertyDefinition) {
@@ -35,10 +38,6 @@ function getNumberStep(property: MaterialPropertyDefinition) {
   }
 
   return property.valueType === 'float' || property.valueType.startsWith('vec') ? '0.01' : '1'
-}
-
-function getScopeTitle(scope: MaterialPropertyScope) {
-  return scope === 'scene' ? 'Scene' : 'Post Process'
 }
 
 function buildPropertyGroups(properties: MaterialPropertyDefinition[]) {
@@ -57,10 +56,26 @@ function buildPropertyGroups(properties: MaterialPropertyDefinition[]) {
   }))
 }
 
-function buildPostPassSections(properties: MaterialPropertyDefinition[]) {
+function buildInspectorTabs(
+  properties: MaterialPropertyDefinition[],
+  postProcessPasses: PostProcessPass[],
+): InspectorTab[] {
+  const sceneProperties = properties.filter((property) => property.scope === 'scene')
+  const postProperties = properties.filter((property) => property.scope === 'post')
+  const tabs: InspectorTab[] = []
+
+  if (sceneProperties.length > 0) {
+    tabs.push({
+      id: 'scene',
+      label: 'Scene',
+      groups: buildPropertyGroups(sceneProperties),
+      propertyCount: sceneProperties.length,
+    })
+  }
+
   const passMap = new Map<string, MaterialPropertyDefinition[]>()
 
-  properties.forEach((property) => {
+  postProperties.forEach((property) => {
     if (!property.postPassId) {
       return
     }
@@ -70,11 +85,17 @@ function buildPostPassSections(properties: MaterialPropertyDefinition[]) {
     passMap.set(property.postPassId, passProperties)
   })
 
-  return Array.from(passMap.entries()).map<PostPassSection>(([passId, passProperties]) => ({
-    passId,
-    passName: passProperties[0]?.postPassName ?? passId,
-    groups: buildPropertyGroups(passProperties),
-  }))
+  postProcessPasses.forEach((pass) => {
+    const passProperties = passMap.get(pass.id) ?? []
+    tabs.push({
+      id: pass.id,
+      label: pass.name,
+      groups: buildPropertyGroups(passProperties),
+      propertyCount: passProperties.length,
+    })
+  })
+
+  return tabs
 }
 
 function toColorHex(value: MaterialPropertyValue, componentCount: number) {
@@ -330,16 +351,19 @@ function renderPropertyCard(
 
 export function MaterialInspectorPanel({
   properties,
+  postProcessPasses,
   values,
   textureAssets,
   textureLoadError,
   onValueChange,
   onTextureUpload,
 }: MaterialInspectorPanelProps) {
-  const sceneGroups = buildPropertyGroups(properties.filter((property) => property.scope === 'scene'))
-  const postPassSections = buildPostPassSections(
-    properties.filter((property) => property.scope === 'post'),
+  const tabs = useMemo(
+    () => buildInspectorTabs(properties, postProcessPasses),
+    [postProcessPasses, properties],
   )
+  const [activeTabId, setActiveTabId] = useState<string | null>(tabs[0]?.id ?? null)
+  const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0] ?? null
 
   return (
     <section className="inspector-panel">
@@ -347,96 +371,45 @@ export function MaterialInspectorPanel({
         <p className="panel__eyebrow">Inspector</p>
       </div>
 
-      {properties.length > 0 ? (
-        <div className="inspector-panel__groups">
-          {sceneGroups.length > 0 ? (
-            <section className="inspector-scope">
-              <div className="inspector-group__header">
-                <h3>{getScopeTitle('scene')}</h3>
-                <span>{sceneGroups.reduce((count, group) => count + group.properties.length, 0)}개</span>
-              </div>
+      {tabs.length > 0 && activeTab ? (
+        <>
+          <div className="inspector-panel__tabs">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                className={`inspector-panel__tab ${tab.id === activeTab.id ? 'inspector-panel__tab--active' : ''}`}
+                onClick={() => setActiveTabId(tab.id)}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
 
-              {sceneGroups.map((group) => (
-                <section key={`scene-${group.name}`} className="inspector-group">
-                  <div className="inspector-group__header">
-                    <h3>{group.name}</h3>
-                    <span>{group.properties.length}개</span>
-                  </div>
+          <div className="inspector-panel__groups">
+            {activeTab.groups.map((group) => (
+              <section key={`${activeTab.id}-${group.name}`} className="inspector-group">
+                <div className="inspector-group__header">
+                  <h3>{group.name}</h3>
+                  <span>{group.properties.length}개</span>
+                </div>
 
-                  <div className="inspector-panel__list">
-                    {group.properties.map((property) =>
-                      renderPropertyCard(
-                        property,
-                        values[property.id],
-                        textureAssets,
-                        textureLoadError,
-                        onValueChange,
-                        onTextureUpload,
-                      ),
-                    )}
-                  </div>
-                </section>
-              ))}
-            </section>
-          ) : null}
-
-          {postPassSections.length > 0 ? (
-            <section className="inspector-scope">
-              <div className="inspector-group__header">
-                <h3>{getScopeTitle('post')}</h3>
-                <span>
-                  {postPassSections.reduce(
-                    (count, section) =>
-                      count +
-                      section.groups.reduce(
-                        (groupCount, group) => groupCount + group.properties.length,
-                        0,
-                      ),
-                    0,
+                <div className="inspector-panel__list">
+                  {group.properties.map((property) =>
+                    renderPropertyCard(
+                      property,
+                      values[property.id],
+                      textureAssets,
+                      textureLoadError,
+                      onValueChange,
+                      onTextureUpload,
+                    ),
                   )}
-                  개
-                </span>
-              </div>
-
-              {postPassSections.map((section) => (
-                <section key={section.passId} className="inspector-group">
-                  <div className="inspector-group__header">
-                    <h3>{section.passName}</h3>
-                    <span>
-                      {section.groups.reduce(
-                        (count, group) => count + group.properties.length,
-                        0,
-                      )}
-                      개
-                    </span>
-                  </div>
-
-                  {section.groups.map((group) => (
-                    <section key={`${section.passId}-${group.name}`} className="inspector-group">
-                      <div className="inspector-group__header">
-                        <h3>{group.name}</h3>
-                        <span>{group.properties.length}개</span>
-                      </div>
-
-                      <div className="inspector-panel__list">
-                        {group.properties.map((property) =>
-                          renderPropertyCard(
-                            property,
-                            values[property.id],
-                            textureAssets,
-                            textureLoadError,
-                            onValueChange,
-                            onTextureUpload,
-                          ),
-                        )}
-                      </div>
-                    </section>
-                  ))}
-                </section>
-              ))}
-            </section>
-          ) : null}
-        </div>
+                </div>
+              </section>
+            ))}
+          </div>
+        </>
       ) : (
         <p className="inspector-panel__empty">
           현재 링크된 프로그램에서 인스펙터에 표시할 사용자 uniform이 없습니다.

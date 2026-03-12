@@ -1,11 +1,15 @@
 import type { MaterialPropertyDefinition, MaterialPropertyValue } from '../../shared/types/materialProperty'
 import type { ModelAsset, ModelBounds } from '../../shared/types/modelAsset'
-import type { PostProcessPass } from '../../shared/types/postProcess'
+import type {
+  PostProcessPass,
+  PostProcessRenderTargetFormat,
+} from '../../shared/types/postProcess'
 import type { RenderDiagnostics } from '../../shared/types/renderDiagnostics'
 import {
   defaultBlendPresetState,
   defaultModelTransformState,
   defaultPostProcessEnabled,
+  defaultSceneRenderTargetFormat,
 } from '../../shared/types/scenePreview'
 import type {
   BlendPreset,
@@ -13,6 +17,7 @@ import type {
   GeometryPreviewId,
   ModelTransformState,
   ResolutionScale,
+  SceneRenderTargetFormat,
   SceneMode,
   ViewportCameraState,
 } from '../../shared/types/scenePreview'
@@ -94,6 +99,7 @@ interface SceneRenderTarget {
   depthRenderbuffer: WebGLRenderbuffer
   width: number
   height: number
+  format: SceneRenderTargetFormat
 }
 
 interface PostRenderTarget {
@@ -101,6 +107,7 @@ interface PostRenderTarget {
   colorTexture: WebGLTexture
   width: number
   height: number
+  format: PostProcessRenderTargetFormat
 }
 
 interface PostPassRuntime {
@@ -108,6 +115,7 @@ interface PostPassRuntime {
   name: string
   enabled: boolean
   source: string
+  renderTargetFormat: PostProcessRenderTargetFormat
   program: WebGLProgram
   uniformLocations: PostProcessUniformLocations
 }
@@ -168,6 +176,7 @@ export interface RendererStateSnapshot {
   geometryId: GeometryPreviewId
   blendPresetState: BlendPresetState
   postProcessEnabled: boolean
+  sceneRenderTargetFormat: SceneRenderTargetFormat
   resolutionScale: ResolutionScale
 }
 
@@ -192,6 +201,7 @@ export class WebGLQuadRenderer {
   private textureAssets = new Map<string, WebGLTexture>()
   private fallbackTexture: WebGLTexture | null = null
   private postFallbackTexture: WebGLTexture | null = null
+  private readonly colorBufferFloatExtension: unknown
   private uniformLocations: RendererUniformLocations
   private readonly helperProgram: WebGLProgram
   private readonly helperUniformLocations: HelperProgramUniformLocations
@@ -212,6 +222,7 @@ export class WebGLQuadRenderer {
     dst: defaultBlendPresetState.dst,
   }
   private postProcessEnabled = defaultPostProcessEnabled
+  private sceneRenderTargetFormat: SceneRenderTargetFormat = defaultSceneRenderTargetFormat
   private resolutionScale: ResolutionScale = 1
   private isViewportActive = true
   private modelTransform: ModelTransformState = {
@@ -241,13 +252,14 @@ export class WebGLQuadRenderer {
       initialSources.postProcessPasses && initialSources.postProcessPasses.length > 0
         ? initialSources.postProcessPasses
         : [
-            {
-              id: 'post-pass-1',
-              name: 'Pass 1',
-              enabled: true,
-              source:
+          {
+            id: 'post-pass-1',
+            name: 'Pass 1',
+            enabled: true,
+            renderTargetFormat: 'rgba8',
+            source:
                 initialSources.postProcessSource ?? defaultPostProcessFragmentShaderSource,
-            },
+          },
           ]
 
     const { program, diagnostics } = createShaderProgram(
@@ -264,6 +276,7 @@ export class WebGLQuadRenderer {
 
     this.program = program
     this.compileSucceeded = true
+    this.colorBufferFloatExtension = this.gl.getExtension('EXT_color_buffer_float')
     this.uniformLocations = this.getRendererUniformLocations()
     this.helperProgram = this.createHelperProgram()
     this.helperUniformLocations = {
@@ -342,6 +355,7 @@ export class WebGLQuadRenderer {
       geometryId: this.geometryId,
       blendPresetState: this.blendPresetState,
       postProcessEnabled: this.postProcessEnabled,
+      sceneRenderTargetFormat: this.sceneRenderTargetFormat,
       resolutionScale: this.resolutionScale,
     }
   }
@@ -433,6 +447,7 @@ export class WebGLQuadRenderer {
         id: entry.pass.id,
         name: entry.pass.name,
         enabled: entry.pass.enabled,
+        renderTargetFormat: entry.pass.renderTargetFormat,
         source: entry.pass.source,
         program,
         uniformLocations: this.getPostProcessUniformLocations(program),
@@ -472,6 +487,18 @@ export class WebGLQuadRenderer {
     this.render(this.elapsedSeconds)
   }
 
+  updateSceneRenderTargetFormat(sceneRenderTargetFormat: SceneRenderTargetFormat) {
+    if (this.sceneRenderTargetFormat === sceneRenderTargetFormat) {
+      return
+    }
+
+    this.sceneRenderTargetFormat = sceneRenderTargetFormat
+    if (this.postProcessEnabled) {
+      this.recreateSceneRenderTarget(this.viewportWidth, this.viewportHeight)
+    }
+    this.render(this.elapsedSeconds)
+  }
+
   updatePostProcessPasses(postProcessPasses: PostProcessPass[]) {
     this.postProcessPasses = postProcessPasses
 
@@ -490,10 +517,12 @@ export class WebGLQuadRenderer {
           ...runtime,
           name: pass.name,
           enabled: pass.enabled,
+          renderTargetFormat: pass.renderTargetFormat,
           source: pass.source,
         }
       })
       this.syncMaterialProperties()
+      this.ensurePostRenderTargets()
       this.render(this.elapsedSeconds)
     }
   }
@@ -1077,6 +1106,7 @@ export class WebGLQuadRenderer {
         id: pass.id,
         name: pass.name,
         enabled: pass.enabled,
+        renderTargetFormat: pass.renderTargetFormat,
         source: pass.source,
         program,
         uniformLocations: this.getPostProcessUniformLocations(program),
@@ -1277,7 +1307,8 @@ export class WebGLQuadRenderer {
     if (
       this.sceneRenderTarget &&
       this.sceneRenderTarget.width === this.viewportWidth &&
-      this.sceneRenderTarget.height === this.viewportHeight
+      this.sceneRenderTarget.height === this.viewportHeight &&
+      this.sceneRenderTarget.format === this.sceneRenderTargetFormat
     ) {
       return
     }
@@ -1289,13 +1320,16 @@ export class WebGLQuadRenderer {
     if (
       this.postRenderTargets.length === this.postPassRuntimes.length &&
       this.postRenderTargets.every(
-        (target) => target.width === this.viewportWidth && target.height === this.viewportHeight,
+        (target, index) =>
+          target.width === this.viewportWidth &&
+          target.height === this.viewportHeight &&
+          target.format === this.postPassRuntimes[index]?.renderTargetFormat,
       )
     ) {
       return
     }
 
-    this.recreatePostRenderTargets(this.viewportWidth, this.viewportHeight, this.postPassRuntimes.length)
+    this.recreatePostRenderTargets(this.viewportWidth, this.viewportHeight, this.postPassRuntimes)
   }
 
   private recreateSceneRenderTarget(width: number, height: number) {
@@ -1329,15 +1363,17 @@ export class WebGLQuadRenderer {
     this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MAG_FILTER, this.gl.LINEAR)
     this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_S, this.gl.CLAMP_TO_EDGE)
     this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_T, this.gl.CLAMP_TO_EDGE)
+    const useFloatFormat =
+      this.sceneRenderTargetFormat === 'rgba16f' && Boolean(this.colorBufferFloatExtension)
     this.gl.texImage2D(
       this.gl.TEXTURE_2D,
       0,
-      this.gl.RGBA,
+      useFloatFormat ? this.gl.RGBA16F : this.gl.RGBA,
       width,
       height,
       0,
       this.gl.RGBA,
-      this.gl.UNSIGNED_BYTE,
+      useFloatFormat ? this.gl.HALF_FLOAT : this.gl.UNSIGNED_BYTE,
       null,
     )
     this.gl.framebufferTexture2D(
@@ -1383,19 +1419,30 @@ export class WebGLQuadRenderer {
       depthRenderbuffer,
       width,
       height,
+      format: useFloatFormat ? 'rgba16f' : 'rgba8',
     }
   }
 
-  private recreatePostRenderTargets(width: number, height: number, count: number) {
+  private recreatePostRenderTargets(
+    width: number,
+    height: number,
+    runtimes: PostPassRuntime[],
+  ) {
     if (width <= 0 || height <= 0) {
       return
     }
 
     this.deletePostRenderTargets()
-    this.postRenderTargets = Array.from({ length: count }, () => this.createPostRenderTarget(width, height))
+    this.postRenderTargets = runtimes.map((runtime) =>
+      this.createPostRenderTarget(width, height, runtime.renderTargetFormat),
+    )
   }
 
-  private createPostRenderTarget(width: number, height: number): PostRenderTarget {
+  private createPostRenderTarget(
+    width: number,
+    height: number,
+    format: PostProcessRenderTargetFormat,
+  ): PostRenderTarget {
     const framebuffer = this.gl.createFramebuffer()
     const colorTexture = this.gl.createTexture()
 
@@ -1415,15 +1462,16 @@ export class WebGLQuadRenderer {
     this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MAG_FILTER, this.gl.LINEAR)
     this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_S, this.gl.CLAMP_TO_EDGE)
     this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_T, this.gl.CLAMP_TO_EDGE)
+    const useFloatFormat = format === 'rgba16f' && Boolean(this.colorBufferFloatExtension)
     this.gl.texImage2D(
       this.gl.TEXTURE_2D,
       0,
-      this.gl.RGBA,
+      useFloatFormat ? this.gl.RGBA16F : this.gl.RGBA,
       width,
       height,
       0,
       this.gl.RGBA,
-      this.gl.UNSIGNED_BYTE,
+      useFloatFormat ? this.gl.HALF_FLOAT : this.gl.UNSIGNED_BYTE,
       null,
     )
     this.gl.framebufferTexture2D(
@@ -1451,6 +1499,7 @@ export class WebGLQuadRenderer {
       colorTexture,
       width,
       height,
+      format: useFloatFormat ? 'rgba16f' : 'rgba8',
     }
   }
 
@@ -1507,15 +1556,14 @@ export class WebGLQuadRenderer {
       () => null,
     )
 
-    enabledPassIndexes.forEach((runtimeIndex, enabledIndex) => {
+    enabledPassIndexes.forEach((runtimeIndex) => {
       const runtime = this.postPassRuntimes[runtimeIndex]
-      const isLastEnabledPass = enabledIndex === enabledPassIndexes.length - 1
-      const target = !isLastEnabledPass ? this.postRenderTargets[runtimeIndex] : null
-      if (!isLastEnabledPass && !target) {
+      const target = this.postRenderTargets[runtimeIndex]
+      if (!target) {
         return
       }
 
-      this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, target?.framebuffer ?? null)
+      this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, target.framebuffer)
       this.gl.viewport(0, 0, this.viewportWidth, this.viewportHeight)
       this.gl.disable(this.gl.DEPTH_TEST)
       this.gl.disable(this.gl.CULL_FACE)
@@ -1565,12 +1613,11 @@ export class WebGLQuadRenderer {
       this.drawMesh(this.screenMesh)
       this.gl.bindVertexArray(null)
 
-      if (target) {
-        previousTexture = target.colorTexture
-        completedPassTextures[runtimeIndex] = target.colorTexture
-      }
+      previousTexture = target.colorTexture
+      completedPassTextures[runtimeIndex] = target.colorTexture
     })
 
+    this.drawCopyToScreen(previousTexture, elapsedSeconds)
     this.gl.bindTexture(this.gl.TEXTURE_2D, null)
     this.gl.depthMask(true)
   }

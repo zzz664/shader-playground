@@ -1,6 +1,10 @@
 import { Suspense, lazy, type ReactNode } from 'react'
-import type { PostProcessPass } from '../../shared/types/postProcess'
+import type {
+  PostProcessPass,
+  PostProcessRenderTargetFormat,
+} from '../../shared/types/postProcess'
 import type { ParsedDiagnosticLine } from '../../shared/types/renderDiagnostics'
+import type { SceneRenderTargetFormat } from '../../shared/types/scenePreview'
 
 const CodeMirrorShaderEditor = lazy(async () => await import('./CodeMirrorShaderEditor'))
 
@@ -16,6 +20,7 @@ interface ShaderEditorPanelProps {
   activeStage: 'vertex' | 'fragment' | 'post'
   vertexSource: string
   fragmentSource: string
+  sceneRenderTargetFormat: SceneRenderTargetFormat
   postProcessSource: string
   postProcessPasses: PostProcessPass[]
   activePostProcessPassId: string | null
@@ -27,12 +32,17 @@ interface ShaderEditorPanelProps {
   onStageChange: (stage: 'vertex' | 'fragment' | 'post') => void
   onVertexChange: (nextValue: string) => void
   onFragmentChange: (nextValue: string) => void
+  onSceneRenderTargetFormatChange: (format: SceneRenderTargetFormat) => void
   onPostProcessChange: (nextValue: string) => void
   onActivePostProcessPassChange: (passId: string) => void
   onAddPostProcessPass: () => void
   onRemovePostProcessPass: (passId: string) => void
   onRenamePostProcessPass: (passId: string, name: string) => void
   onMovePostProcessPass: (passId: string, direction: 'up' | 'down') => void
+  onUpdatePostProcessPassFormat: (
+    passId: string,
+    format: PostProcessRenderTargetFormat,
+  ) => void
 }
 
 export function ShaderEditorPanel(props: ShaderEditorPanelProps) {

@@ -7,6 +7,7 @@ import {
   defaultBlendPresetState,
   defaultModelTransformState,
   defaultPostProcessEnabled,
+  defaultSceneRenderTargetFormat,
 } from '../types/scenePreview'
 import type { ModelAsset } from '../types/modelAsset'
 import type {
@@ -75,6 +76,7 @@ export function normalizeProjectSnapshot(
             id: pass.id || `post-pass-${index + 1}`,
             name: pass.name || `Pass ${index + 1}`,
             enabled: pass.enabled ?? true,
+            renderTargetFormat: pass.renderTargetFormat ?? 'rgba8',
             source: pass.source ?? defaultPostProcessFragmentShaderSource,
           }),
         )
@@ -98,6 +100,7 @@ export function normalizeProjectSnapshot(
     activePostProcessPassId: normalizedActivePostProcessPassId,
     postProcessEnabled:
       snapshot.postProcessEnabled ?? defaultPostProcessChainState.enabled ?? defaultPostProcessEnabled,
+    sceneRenderTargetFormat: snapshot.sceneRenderTargetFormat ?? defaultSceneRenderTargetFormat,
     blendPresetState: snapshot.blendPresetState ?? defaultBlendPresetState,
     modelTransform: snapshot.modelTransform ?? defaultModelTransformState,
   }

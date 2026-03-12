@@ -1,10 +1,13 @@
 import { defaultPostProcessFragmentShaderSource } from '../../core/shader/templates/defaultShaders'
 
+export type PostProcessRenderTargetFormat = 'rgba8' | 'rgba16f'
+
 export interface PostProcessPass {
   id: string;
   name: string;
   enabled: boolean;
   source: string;
+  renderTargetFormat: PostProcessRenderTargetFormat;
 }
 
 export interface PostProcessChainState {
@@ -26,6 +29,7 @@ export function createDefaultPostProcessPass(
     id: overrides.id ?? 'post-pass-1',
     name: overrides.name ?? 'Pass 1',
     enabled: overrides.enabled ?? true,
+    renderTargetFormat: overrides.renderTargetFormat ?? 'rgba8',
     source:
       overrides.source ?? createDefaultPostProcessPassSource(overrides.name ?? 'Pass 1'),
   }

@@ -16,6 +16,10 @@ export const defaultBlendPresetState: BlendPresetState = {
 
 export const defaultPostProcessEnabled = true
 
+export type SceneRenderTargetFormat = 'rgba8' | 'rgba16f'
+
+export const defaultSceneRenderTargetFormat: SceneRenderTargetFormat = 'rgba8'
+
 export type ResolutionScale = 0.5 | 0.75 | 1
 
 export interface ViewportCameraState {
