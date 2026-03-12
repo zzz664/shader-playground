@@ -910,6 +910,7 @@ function App() {
       <section className="workspace workspace--three-column">
         <aside className="workspace-column workspace-column--viewport">
           <ViewportPanel
+            key={`viewport-post-${postProcessEnabled ? "on" : "off"}`}
             vertexSource={vertexSource}
             fragmentSource={fragmentSource}
             postProcessSource={activePostProcessSource}

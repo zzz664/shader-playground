@@ -124,3 +124,18 @@ void main() {
   outColor = vec4(color, prevPassColor.a);
 }
 `
+
+export const defaultPostProcessCopyFragmentShaderSource = `#version 300 es
+
+precision highp float;
+
+in vec2 vUv;
+
+uniform sampler2D uSceneColor;
+
+out vec4 outColor;
+
+void main() {
+  outColor = texture(uSceneColor, vUv);
+}
+`

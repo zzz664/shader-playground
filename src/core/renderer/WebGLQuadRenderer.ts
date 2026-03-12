@@ -26,6 +26,7 @@ import {
 } from '../shader/reflection/reflectActiveUniforms'
 import {
   defaultFragmentShaderSource,
+  defaultPostProcessCopyFragmentShaderSource,
   defaultPostProcessFragmentShaderSource,
   defaultPostProcessVertexShaderSource,
   defaultVertexShaderSource,
@@ -270,7 +271,7 @@ export class WebGLQuadRenderer {
       projection: this.gl.getUniformLocation(this.helperProgram, 'uProj'),
     }
     this.copyPostProcessProgram = this.createPostProcessProgram(
-      defaultPostProcessFragmentShaderSource,
+      defaultPostProcessCopyFragmentShaderSource,
     )
     this.copyPostProcessUniformLocations = this.getPostProcessUniformLocations(
       this.copyPostProcessProgram,
@@ -618,7 +619,9 @@ export class WebGLQuadRenderer {
   }
 
   private render(elapsedSeconds: number) {
-    this.ensureSceneRenderTarget()
+    if (this.postProcessEnabled) {
+      this.ensureSceneRenderTarget()
+    }
 
     const aspect = this.viewportWidth / Math.max(this.viewportHeight, 1)
     const frameState = this.uploadedModelBounds ? frameModelBounds(this.uploadedModelBounds) : null
@@ -638,7 +641,7 @@ export class WebGLQuadRenderer {
         ? this.createModelTransformMatrix()
         : createIdentityMatrix4()
 
-    this.beginScenePass()
+    this.beginScenePass(this.postProcessEnabled)
     this.gl.useProgram(this.program)
 
     if (this.uniformLocations.time) {
@@ -703,6 +706,10 @@ export class WebGLQuadRenderer {
   }
 
   private finishFrame(elapsedSeconds: number) {
+    if (!this.postProcessEnabled) {
+      return
+    }
+
     this.drawPostProcessChain(elapsedSeconds)
   }
 
@@ -742,8 +749,14 @@ export class WebGLQuadRenderer {
     this.gl.depthMask(false)
   }
 
-  private beginScenePass() {
-    this.bindSceneRenderTarget()
+  private beginScenePass(useOffscreenTarget: boolean) {
+    if (useOffscreenTarget) {
+      this.bindSceneRenderTarget()
+    } else {
+      this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, null)
+      this.gl.viewport(0, 0, this.viewportWidth, this.viewportHeight)
+    }
+
     this.gl.clearColor(0.02, 0.04, 0.08, 1)
     this.gl.clear(this.gl.COLOR_BUFFER_BIT | this.gl.DEPTH_BUFFER_BIT)
     this.applySceneGeometryState()
